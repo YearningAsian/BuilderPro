@@ -1,6 +1,5 @@
 from uuid import UUID
-from sqlalchemy import Column, String, Numeric, Boolean, Text, DateTime, ForeignKey, func
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy import Column, String, Numeric, Boolean, Text, DateTime, ForeignKey, func, Uuid
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.db.base import Base
@@ -9,7 +8,7 @@ from app.db.base import Base
 class User(Base):
     __tablename__ = "users"
 
-    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=lambda: UUID('00000000-0000-0000-0000-000000000000'))
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=lambda: UUID('00000000-0000-0000-0000-000000000000'))
     email = Column(String, unique=True, nullable=False, index=True)
     full_name = Column(String, nullable=True)
     role = Column(String, default="user")
@@ -22,7 +21,7 @@ class User(Base):
 class Customer(Base):
     __tablename__ = "customers"
 
-    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=lambda: UUID('00000000-0000-0000-0000-000000000000'))
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=lambda: UUID('00000000-0000-0000-0000-000000000000'))
     name = Column(String, nullable=False, index=True)
     phone = Column(String, nullable=True)
     email = Column(String, nullable=True)
@@ -37,7 +36,7 @@ class Customer(Base):
 class Vendor(Base):
     __tablename__ = "vendors"
 
-    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=lambda: UUID('00000000-0000-0000-0000-000000000000'))
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=lambda: UUID('00000000-0000-0000-0000-000000000000'))
     name = Column(String, unique=True, nullable=False, index=True)
     phone = Column(String, nullable=True)
     email = Column(String, nullable=True)
@@ -52,13 +51,13 @@ class Vendor(Base):
 class Material(Base):
     __tablename__ = "materials"
 
-    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=lambda: UUID('00000000-0000-0000-0000-000000000000'))
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=lambda: UUID('00000000-0000-0000-0000-000000000000'))
     name = Column(String, nullable=False, index=True)
     category = Column(String, nullable=True)
     unit_type = Column(String, nullable=False)
     unit_cost = Column(Numeric(12, 2), nullable=False)
     sku = Column(String, unique=True, nullable=True)
-    default_vendor_id = Column(PG_UUID(as_uuid=True), ForeignKey("vendors.id"), nullable=True)
+    default_vendor_id = Column(Uuid(as_uuid=True), ForeignKey("vendors.id"), nullable=True)
     size_dims = Column(String, nullable=True)
     notes = Column(Text, nullable=True)
     is_taxable = Column(Boolean, default=True)
@@ -74,13 +73,13 @@ class Material(Base):
 class Project(Base):
     __tablename__ = "projects"
 
-    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=lambda: UUID('00000000-0000-0000-0000-000000000000'))
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=lambda: UUID('00000000-0000-0000-0000-000000000000'))
     name = Column(String, nullable=False, index=True)
-    customer_id = Column(PG_UUID(as_uuid=True), ForeignKey("customers.id"), nullable=False)
+    customer_id = Column(Uuid(as_uuid=True), ForeignKey("customers.id"), nullable=False)
     status = Column(String, default="draft")
     default_tax_pct = Column(Numeric(5, 2), default=0)
     default_waste_pct = Column(Numeric(5, 2), default=0)
-    created_by = Column(PG_UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    created_by = Column(Uuid(as_uuid=True), ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
@@ -93,9 +92,9 @@ class Project(Base):
 class ProjectItem(Base):
     __tablename__ = "project_items"
 
-    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=lambda: UUID('00000000-0000-0000-0000-000000000000'))
-    project_id = Column(PG_UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
-    material_id = Column(PG_UUID(as_uuid=True), ForeignKey("materials.id"), nullable=False)
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=lambda: UUID('00000000-0000-0000-0000-000000000000'))
+    project_id = Column(Uuid(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    material_id = Column(Uuid(as_uuid=True), ForeignKey("materials.id"), nullable=False)
     quantity = Column(Numeric(12, 3), nullable=False)
     unit_type = Column(String, nullable=False)
     unit_cost = Column(Numeric(12, 2), nullable=False)
