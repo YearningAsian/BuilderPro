@@ -1,0 +1,12 @@
+# Local logs
+.backend.log
+
+# Python virtual environments
+backend/.venv/
+
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+
+# Local SQLite databases
+*.db
