@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Navigation from "@/components/Navigation";
+import { StoreProvider } from "@/hooks/useStore";
+import { QueryProvider } from "@/providers/QueryProvider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -28,10 +30,15 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-gray-50`}
       >
-        <Navigation />
-        <main className="min-h-screen">
-          {children}
-        </main>
+        <QueryProvider>
+          <StoreProvider>
+            <Navigation />
+            {/* Main content offset from sidebar on desktop, from header on mobile */}
+            <main className="md:ml-56 pt-14 md:pt-0 min-h-screen">
+              {children}
+            </main>
+          </StoreProvider>
+        </QueryProvider>
       </body>
     </html>
   );

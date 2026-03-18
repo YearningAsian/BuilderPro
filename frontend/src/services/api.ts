@@ -1,48 +1,93 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+/**
+ * Type-safe API client for the FastAPI backend.
+ *
+ * Currently the prototype runs on hardcoded seed data via useStore,
+ * but these functions are wired up and ready to swap in when the
+ * backend endpoints are live. Each method returns typed data.
+ */
+import type {
+  Material,
+  MaterialCreate,
+  Vendor,
+  VendorCreate,
+  Customer,
+  CustomerCreate,
+  Project,
+  ProjectCreate,
+  ProjectItem,
+  ProjectItemCreate,
+} from "@/types";
 
-export const api = {
-  // Materials endpoints
-  materials: {
-    getAll: () => fetch(`${API_BASE_URL}/materials`),
-    getById: (id: string) => fetch(`${API_BASE_URL}/materials/${id}`),
-    create: (data: any) => fetch(`${API_BASE_URL}/materials`, { method: 'POST', body: JSON.stringify(data) }),
-    update: (id: string, data: any) => fetch(`${API_BASE_URL}/materials/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-    delete: (id: string) => fetch(`${API_BASE_URL}/materials/${id}`, { method: 'DELETE' }),
-  },
+const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
 
-  // Projects endpoints
-  projects: {
-    getAll: () => fetch(`${API_BASE_URL}/projects`),
-    getById: (id: string) => fetch(`${API_BASE_URL}/projects/${id}`),
-    create: (data: any) => fetch(`${API_BASE_URL}/projects`, { method: 'POST', body: JSON.stringify(data) }),
-    update: (id: string, data: any) => fetch(`${API_BASE_URL}/projects/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-    delete: (id: string) => fetch(`${API_BASE_URL}/projects/${id}`, { method: 'DELETE' }),
-  },
+const JSON_HEADERS: HeadersInit = {
+  "Content-Type": "application/json",
+  Accept: "application/json",
+};
 
-  // Orders endpoints
-  orders: {
-    getAll: () => fetch(`${API_BASE_URL}/orders`),
-    getById: (id: string) => fetch(`${API_BASE_URL}/orders/${id}`),
-    create: (data: any) => fetch(`${API_BASE_URL}/orders`, { method: 'POST', body: JSON.stringify(data) }),
-    update: (id: string, data: any) => fetch(`${API_BASE_URL}/orders/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-    delete: (id: string) => fetch(`${API_BASE_URL}/orders/${id}`, { method: 'DELETE' }),
-  },
+async function request<T>(url: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(url, {
+    ...init,
+    headers: { ...JSON_HEADERS, ...init?.headers },
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "Unknown error");
+    throw new Error(`API ${res.status}: ${body}`);
+  }
+  return res.json() as Promise<T>;
+}
 
-  // Customers endpoints
-  customers: {
-    getAll: () => fetch(`${API_BASE_URL}/customers`),
-    getById: (id: string) => fetch(`${API_BASE_URL}/customers/${id}`),
-    create: (data: any) => fetch(`${API_BASE_URL}/customers`, { method: 'POST', body: JSON.stringify(data) }),
-    update: (id: string, data: any) => fetch(`${API_BASE_URL}/customers/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-    delete: (id: string) => fetch(`${API_BASE_URL}/customers/${id}`, { method: 'DELETE' }),
-  },
+export const materialsApi = {
+  list: () => request<Material[]>(`${BASE}/materials`),
+  get: (id: string) => request<Material>(`${BASE}/materials/${id}`),
+  create: (data: MaterialCreate) =>
+    request<Material>(`${BASE}/materials`, { method: "POST", body: JSON.stringify(data) }),
+  update: (id: string, data: Partial<MaterialCreate>) =>
+    request<Material>(`${BASE}/materials/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  delete: (id: string) =>
+    request<void>(`${BASE}/materials/${id}`, { method: "DELETE" }),
+};
 
-  // Vendors endpoints
-  vendors: {
-    getAll: () => fetch(`${API_BASE_URL}/vendors`),
-    getById: (id: string) => fetch(`${API_BASE_URL}/vendors/${id}`),
-    create: (data: any) => fetch(`${API_BASE_URL}/vendors`, { method: 'POST', body: JSON.stringify(data) }),
-    update: (id: string, data: any) => fetch(`${API_BASE_URL}/vendors/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-    delete: (id: string) => fetch(`${API_BASE_URL}/vendors/${id}`, { method: 'DELETE' }),
-  },
+export const projectsApi = {
+  list: () => request<Project[]>(`${BASE}/projects`),
+  get: (id: string) => request<Project>(`${BASE}/projects/${id}`),
+  create: (data: ProjectCreate) =>
+    request<Project>(`${BASE}/projects`, { method: "POST", body: JSON.stringify(data) }),
+  update: (id: string, data: Partial<ProjectCreate>) =>
+    request<Project>(`${BASE}/projects/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  delete: (id: string) =>
+    request<void>(`${BASE}/projects/${id}`, { method: "DELETE" }),
+};
+
+export const projectItemsApi = {
+  list: (projectId: string) =>
+    request<ProjectItem[]>(`${BASE}/projects/${projectId}/items`),
+  create: (projectId: string, data: ProjectItemCreate) =>
+    request<ProjectItem>(`${BASE}/projects/${projectId}/items`, { method: "POST", body: JSON.stringify(data) }),
+  update: (projectId: string, itemId: string, data: Partial<ProjectItemCreate>) =>
+    request<ProjectItem>(`${BASE}/projects/${projectId}/items/${itemId}`, { method: "PUT", body: JSON.stringify(data) }),
+  delete: (projectId: string, itemId: string) =>
+    request<void>(`${BASE}/projects/${projectId}/items/${itemId}`, { method: "DELETE" }),
+};
+
+export const vendorsApi = {
+  list: () => request<Vendor[]>(`${BASE}/vendors`),
+  get: (id: string) => request<Vendor>(`${BASE}/vendors/${id}`),
+  create: (data: VendorCreate) =>
+    request<Vendor>(`${BASE}/vendors`, { method: "POST", body: JSON.stringify(data) }),
+  update: (id: string, data: Partial<VendorCreate>) =>
+    request<Vendor>(`${BASE}/vendors/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  delete: (id: string) =>
+    request<void>(`${BASE}/vendors/${id}`, { method: "DELETE" }),
+};
+
+export const customersApi = {
+  list: () => request<Customer[]>(`${BASE}/customers`),
+  get: (id: string) => request<Customer>(`${BASE}/customers/${id}`),
+  create: (data: CustomerCreate) =>
+    request<Customer>(`${BASE}/customers`, { method: "POST", body: JSON.stringify(data) }),
+  update: (id: string, data: Partial<CustomerCreate>) =>
+    request<Customer>(`${BASE}/customers/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  delete: (id: string) =>
+    request<void>(`${BASE}/customers/${id}`, { method: "DELETE" }),
 };
