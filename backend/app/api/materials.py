@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from uuid import UUID
+from typing import List, Optional
+
 from app.db.base import get_db
 from app.models.models import Material, Vendor, ProjectItem
 from app.schemas.schemas import Material as MaterialSchema, MaterialCreate, MaterialUpdate
@@ -86,3 +88,37 @@ def delete_material(material_id: UUID, db: Session = Depends(get_db)):
     db.delete(db_material)
     db.commit()
     return None
+
+
+@router.get("/search")
+def search_materials(
+    name: Optional[str] = None,
+    category: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """
+    Search materials by optional name and/or category (case-insensitive, partial match).
+    Returns a list of material objects as JSON.
+    """
+    query = db.query(Material)
+    if name:
+        query = query.filter(Material.name.ilike(f"%{name}%"))
+    if category:
+        query = query.filter(Material.category.ilike(f"%{category}%"))
+
+    materials = query.all()
+
+    results = []
+    for m in materials:
+        results.append({
+            "id": str(m.id),
+            "name": m.name,
+            "category": m.category,
+            "unit_type": m.unit_type,
+            "unit_cost": float(m.unit_cost) if m.unit_cost is not None else None,
+            "default_vendor_id": str(m.default_vendor_id) if m.default_vendor_id else None,
+            "default_waste_pct": float(m.default_waste_pct) if m.default_waste_pct is not None else None,
+            "created_at": m.created_at,
+        })
+
+    return results
