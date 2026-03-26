@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from uuid import UUID
 from app.db.base import get_db
-from app.models.models import Material, Vendor
+from app.models.models import Material, Vendor, ProjectItem
 from app.schemas.schemas import Material as MaterialSchema, MaterialCreate, MaterialUpdate
 
 router = APIRouter(prefix="/materials", tags=["materials"])
@@ -68,14 +68,21 @@ def update_material(material_id: UUID, material: MaterialUpdate, db: Session = D
 
 @router.delete("/{material_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_material(material_id: UUID, db: Session = Depends(get_db)):
-    """Delete material"""
+    """Delete material — blocked if referenced by any project items"""
     db_material = db.query(Material).filter(Material.id == material_id).first()
     if not db_material:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Material not found"
         )
-    
+
+    in_use = db.query(ProjectItem).filter(ProjectItem.material_id == material_id).first()
+    if in_use:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cannot delete material: it is referenced by one or more project items"
+        )
+
     db.delete(db_material)
     db.commit()
     return None

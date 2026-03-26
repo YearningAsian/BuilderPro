@@ -1,13 +1,22 @@
 import os
+
 from dotenv import load_dotenv
-from typing import Optional
 
 load_dotenv()
 
+
+def _normalize_database_url(url: str) -> str:
+    """Normalize provider-specific URL variants into SQLAlchemy-compatible form."""
+    if url.startswith("postgres://"):
+        return url.replace("postgres://", "postgresql://", 1)
+    return url
+
 # Database
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://postgres:password@localhost:5432/builderpro"
+DATABASE_URL = _normalize_database_url(
+    os.getenv(
+        "DATABASE_URL",
+        "postgresql://postgres:password@localhost:5432/builderpro",
+    )
 )
 
 # Supabase
@@ -22,8 +31,10 @@ PROJECT_VERSION = "0.1.0"
 # CORS
 ALLOWED_ORIGINS = [
     "http://localhost:3000",
+    "http://localhost:3001",
     "http://localhost:8000",
     "http://127.0.0.1:3000",
+    "http://127.0.0.1:3001",
     "http://127.0.0.1:8000",
 ]
 

@@ -65,5 +65,6 @@ docker compose up --build
 
 ```bash
 curl http://localhost:8000/health
+curl http://localhost:8000/health/db
 curl -I http://localhost:3000
 ```

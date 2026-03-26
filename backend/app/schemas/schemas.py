@@ -1,7 +1,7 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator, model_validator
 from uuid import UUID
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 from decimal import Decimal
 
 
@@ -11,7 +11,7 @@ from decimal import Decimal
 class UserBase(BaseModel):
     email: str
     full_name: Optional[str] = None
-    role: str = "user"
+    role: Literal["admin", "user"] = "user"
 
 
 class UserCreate(UserBase):
@@ -108,6 +108,20 @@ class MaterialBase(BaseModel):
     is_taxable: bool = True
     default_waste_pct: Decimal = Decimal("0")
 
+    @field_validator("unit_cost")
+    @classmethod
+    def unit_cost_non_negative(cls, v: Decimal) -> Decimal:
+        if v < 0:
+            raise ValueError("unit_cost must be >= 0")
+        return v
+
+    @field_validator("default_waste_pct")
+    @classmethod
+    def waste_pct_non_negative(cls, v: Decimal) -> Decimal:
+        if v < 0:
+            raise ValueError("default_waste_pct must be >= 0")
+        return v
+
 
 class MaterialCreate(MaterialBase):
     pass
@@ -180,9 +194,23 @@ class ProjectItem(ProjectItemBase):
 class ProjectBase(BaseModel):
     name: str
     customer_id: UUID
-    status: str = "draft"
+    status: Literal["draft", "active", "closed"] = "draft"
     default_tax_pct: Decimal = Decimal("0")
     default_waste_pct: Decimal = Decimal("0")
+
+    @field_validator("default_tax_pct")
+    @classmethod
+    def tax_pct_non_negative(cls, v: Decimal) -> Decimal:
+        if v < 0:
+            raise ValueError("default_tax_pct must be >= 0")
+        return v
+
+    @field_validator("default_waste_pct")
+    @classmethod
+    def project_waste_pct_non_negative(cls, v: Decimal) -> Decimal:
+        if v < 0:
+            raise ValueError("default_waste_pct must be >= 0")
+        return v
 
 
 class ProjectCreate(ProjectBase):
@@ -191,9 +219,23 @@ class ProjectCreate(ProjectBase):
 
 class ProjectUpdate(BaseModel):
     name: Optional[str] = None
-    status: Optional[str] = None
+    status: Optional[Literal["draft", "active", "closed"]] = None
     default_tax_pct: Optional[Decimal] = None
     default_waste_pct: Optional[Decimal] = None
+
+    @field_validator("default_tax_pct")
+    @classmethod
+    def tax_pct_non_negative(cls, v: Optional[Decimal]) -> Optional[Decimal]:
+        if v is not None and v < 0:
+            raise ValueError("default_tax_pct must be >= 0")
+        return v
+
+    @field_validator("default_waste_pct")
+    @classmethod
+    def waste_pct_non_negative(cls, v: Optional[Decimal]) -> Optional[Decimal]:
+        if v is not None and v < 0:
+            raise ValueError("default_waste_pct must be >= 0")
+        return v
 
 
 class Project(ProjectBase):

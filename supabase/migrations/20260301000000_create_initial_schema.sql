@@ -72,7 +72,7 @@ create table projects (
 create table project_items (
   id            uuid primary key default gen_random_uuid(),
   project_id    uuid not null references projects(id) on delete cascade,
-  material_id   uuid not null references materials(id),
+  material_id   uuid not null references materials(id) on delete restrict,
   
   quantity      numeric(12,3) not null check (quantity > 0),
   
@@ -89,3 +89,14 @@ create table project_items (
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now()
 );
+
+-- =====================================================
+-- INDEXES  (added 2026-03-26 for query performance)
+-- =====================================================
+create index idx_materials_category    on materials(category);
+create index idx_materials_vendor      on materials(default_vendor_id);
+create index idx_projects_customer     on projects(customer_id);
+create index idx_projects_status       on projects(status);
+create index idx_projects_created_by   on projects(created_by);
+create index idx_project_items_project  on project_items(project_id);
+create index idx_project_items_material on project_items(material_id);

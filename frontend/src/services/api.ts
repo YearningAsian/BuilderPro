@@ -18,7 +18,7 @@ import type {
   ProjectItemCreate,
 } from "@/types";
 
-const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
+const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001/api";
 
 const JSON_HEADERS: HeadersInit = {
   "Content-Type": "application/json",

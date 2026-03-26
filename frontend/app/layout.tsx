@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import Navigation from "@/components/Navigation";
+import AppShell from "@/components/AppShell";
 import { StoreProvider } from "@/hooks/useStore";
 import { QueryProvider } from "@/providers/QueryProvider";
 
@@ -32,11 +32,7 @@ export default function RootLayout({
       >
         <QueryProvider>
           <StoreProvider>
-            <Navigation />
-            {/* Main content offset from sidebar on desktop, from header on mobile */}
-            <main className="md:ml-56 pt-14 md:pt-0 min-h-screen">
-              {children}
-            </main>
+            <AppShell>{children}</AppShell>
           </StoreProvider>
         </QueryProvider>
       </body>

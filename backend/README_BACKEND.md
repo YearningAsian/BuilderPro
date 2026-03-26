@@ -154,6 +154,7 @@ The database tables are created automatically when the app starts. For custom mi
 ### Database Connection Error
 - Ensure PostgreSQL/Supabase is running
 - Verify DATABASE_URL in .env
+- If your DB provider gives a `postgres://...` URL, the backend normalizes it automatically
 - Check username and password
 
 ### Import Errors
