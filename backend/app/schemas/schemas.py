@@ -174,6 +174,7 @@ class ProjectItemCreate(BaseModel):
 
 class ProjectItemUpdate(BaseModel):
     quantity: Optional[Decimal] = None
+    unit_cost: Optional[Decimal] = None
     waste_pct: Optional[Decimal] = None
     notes: Optional[str] = None
 

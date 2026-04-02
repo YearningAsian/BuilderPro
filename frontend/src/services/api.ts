@@ -1,10 +1,10 @@
 /**
  * Type-safe API client for the FastAPI backend.
  *
- * Currently the prototype runs on hardcoded seed data via useStore,
- * but these functions are wired up and ready to swap in when the
- * backend endpoints are live. Each method returns typed data.
+ * The frontend now uses these methods for live reads and writes,
+ * while keeping the existing UI components and types intact.
  */
+import { getActiveSession } from "@/lib/auth";
 import type {
   Material,
   MaterialCreate,
@@ -18,56 +18,170 @@ import type {
   ProjectItemCreate,
 } from "@/types";
 
-const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001/api";
+const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
 
 const JSON_HEADERS: HeadersInit = {
   "Content-Type": "application/json",
   Accept: "application/json",
 };
 
+export type SessionInfoResponse = {
+  role: "admin" | "user";
+  email: string;
+  workspace_id?: string | null;
+  workspace_name?: string | null;
+};
+
+export type CreateInvitePayload = {
+  workspace_id: string;
+  invited_email: string;
+  expires_in_days?: number;
+};
+
+export type CreateInviteResponse = {
+  invite_token: string;
+  workspace_id: string;
+  invited_email: string;
+  expires_at: string;
+};
+
+function toNumber(value: unknown, fallback = 0): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return fallback;
+}
+
+function getAuthHeaders(extraHeaders?: HeadersInit): HeadersInit {
+  const session = getActiveSession();
+  if (!session?.accessToken) {
+    throw new Error("You must be signed in to continue.");
+  }
+
+  return {
+    ...JSON_HEADERS,
+    ...(extraHeaders ?? {}),
+    Authorization: `Bearer ${session.accessToken}`,
+  };
+}
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     ...init,
+    credentials: "include",
     headers: { ...JSON_HEADERS, ...init?.headers },
   });
-  if (!res.ok) {
-    const body = await res.text().catch(() => "Unknown error");
-    throw new Error(`API ${res.status}: ${body}`);
+
+  const bodyText = await res.text().catch(() => "");
+  let payload: unknown = null;
+
+  if (bodyText) {
+    try {
+      payload = JSON.parse(bodyText);
+    } catch {
+      payload = bodyText;
+    }
   }
-  return res.json() as Promise<T>;
+
+  if (!res.ok) {
+    if (payload && typeof payload === "object" && "detail" in payload) {
+      const detail = (payload as { detail?: unknown }).detail;
+      if (typeof detail === "string" && detail.trim()) {
+        throw new Error(detail);
+      }
+    }
+
+    if (typeof payload === "string" && payload.trim()) {
+      throw new Error(payload);
+    }
+
+    throw new Error(`API ${res.status}`);
+  }
+
+  if (res.status === 204 || !bodyText) {
+    return undefined as T;
+  }
+
+  return payload as T;
+}
+
+function normalizeMaterial(material: Material): Material {
+  return {
+    ...material,
+    unit_cost: toNumber(material.unit_cost),
+    default_waste_pct: toNumber(material.default_waste_pct),
+  };
+}
+
+function normalizeProjectItem(item: ProjectItem): ProjectItem {
+  return {
+    ...item,
+    quantity: toNumber(item.quantity),
+    unit_cost: toNumber(item.unit_cost),
+    waste_pct: toNumber(item.waste_pct),
+    total_qty: toNumber(item.total_qty),
+    line_subtotal: toNumber(item.line_subtotal),
+  };
+}
+
+function normalizeProject(project: Project): Project {
+  return {
+    ...project,
+    default_tax_pct: toNumber(project.default_tax_pct),
+    default_waste_pct: toNumber(project.default_waste_pct),
+    items: Array.isArray(project.items) ? project.items.map(normalizeProjectItem) : [],
+  };
 }
 
 export const materialsApi = {
-  list: () => request<Material[]>(`${BASE}/materials`),
-  get: (id: string) => request<Material>(`${BASE}/materials/${id}`),
-  create: (data: MaterialCreate) =>
-    request<Material>(`${BASE}/materials`, { method: "POST", body: JSON.stringify(data) }),
-  update: (id: string, data: Partial<MaterialCreate>) =>
-    request<Material>(`${BASE}/materials/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  list: async () => (await request<Material[]>(`${BASE}/materials`)).map(normalizeMaterial),
+  get: async (id: string) => normalizeMaterial(await request<Material>(`${BASE}/materials/${id}`)),
+  create: async (data: MaterialCreate) =>
+    normalizeMaterial(await request<Material>(`${BASE}/materials`, { method: "POST", body: JSON.stringify(data) })),
+  update: async (id: string, data: Partial<MaterialCreate>) =>
+    normalizeMaterial(await request<Material>(`${BASE}/materials/${id}`, { method: "PUT", body: JSON.stringify(data) })),
   delete: (id: string) =>
     request<void>(`${BASE}/materials/${id}`, { method: "DELETE" }),
 };
 
 export const projectsApi = {
-  list: () => request<Project[]>(`${BASE}/projects`),
-  get: (id: string) => request<Project>(`${BASE}/projects/${id}`),
-  create: (data: ProjectCreate) =>
-    request<Project>(`${BASE}/projects`, { method: "POST", body: JSON.stringify(data) }),
-  update: (id: string, data: Partial<ProjectCreate>) =>
-    request<Project>(`${BASE}/projects/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  list: async () => (await request<Project[]>(`${BASE}/projects`)).map(normalizeProject),
+  get: async (id: string) => normalizeProject(await request<Project>(`${BASE}/projects/${id}`)),
+  create: async (data: ProjectCreate) =>
+    normalizeProject(await request<Project>(`${BASE}/projects`, { method: "POST", body: JSON.stringify(data) })),
+  update: async (id: string, data: Partial<ProjectCreate>) =>
+    normalizeProject(await request<Project>(`${BASE}/projects/${id}`, { method: "PUT", body: JSON.stringify(data) })),
   delete: (id: string) =>
     request<void>(`${BASE}/projects/${id}`, { method: "DELETE" }),
 };
 
 export const projectItemsApi = {
-  list: (projectId: string) =>
-    request<ProjectItem[]>(`${BASE}/projects/${projectId}/items`),
-  create: (projectId: string, data: ProjectItemCreate) =>
-    request<ProjectItem>(`${BASE}/projects/${projectId}/items`, { method: "POST", body: JSON.stringify(data) }),
-  update: (projectId: string, itemId: string, data: Partial<ProjectItemCreate>) =>
-    request<ProjectItem>(`${BASE}/projects/${projectId}/items/${itemId}`, { method: "PUT", body: JSON.stringify(data) }),
-  delete: (projectId: string, itemId: string) =>
-    request<void>(`${BASE}/projects/${projectId}/items/${itemId}`, { method: "DELETE" }),
+  list: async (projectId: string) =>
+    (await request<ProjectItem[]>(`${BASE}/orders`))
+      .map(normalizeProjectItem)
+      .filter((item) => item.project_id === projectId),
+  create: async (projectId: string, data: ProjectItemCreate) =>
+    normalizeProjectItem(
+      await request<ProjectItem>(`${BASE}/orders?project_id=${encodeURIComponent(projectId)}`, {
+        method: "POST",
+        body: JSON.stringify(data),
+      })
+    ),
+  update: async (
+    _projectId: string,
+    itemId: string,
+    data: Partial<Pick<ProjectItem, "quantity" | "unit_cost" | "waste_pct" | "notes">>
+  ) =>
+    normalizeProjectItem(
+      await request<ProjectItem>(`${BASE}/orders/${itemId}`, {
+        method: "PUT",
+        body: JSON.stringify(data),
+      })
+    ),
+  delete: (_projectId: string, itemId: string) =>
+    request<void>(`${BASE}/orders/${itemId}`, { method: "DELETE" }),
 };
 
 export const vendorsApi = {
@@ -90,4 +204,14 @@ export const customersApi = {
     request<Customer>(`${BASE}/customers/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   delete: (id: string) =>
     request<void>(`${BASE}/customers/${id}`, { method: "DELETE" }),
+};
+
+export const authApi = {
+  me: () => request<SessionInfoResponse>(`${BASE}/auth/me`, { headers: getAuthHeaders() }),
+  createInvite: (data: CreateInvitePayload) =>
+    request<CreateInviteResponse>(`${BASE}/auth/invites`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data),
+    }),
 };

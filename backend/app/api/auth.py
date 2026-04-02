@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -24,6 +24,13 @@ class SignInRequest(BaseModel):
 class SignInResponse(BaseModel):
     access_token: str
     token_type: str
+    role: str
+    email: str
+    workspace_id: str | None = None
+    workspace_name: str | None = None
+
+
+class SessionInfoResponse(BaseModel):
     role: str
     email: str
     workspace_id: str | None = None
@@ -75,6 +82,10 @@ class JoinInviteResponse(BaseModel):
     workspace_id: str
     workspace_name: str
     requires_email_confirmation: bool
+
+
+class SignOutResponse(BaseModel):
+    message: str
 
 
 def _ensure_supabase_config() -> None:
@@ -193,6 +204,11 @@ def _current_user_email_from_token(authorization: str | None) -> str:
     return _normalize_email(email)
 
 
+def _clear_auth_cookies(response: Response) -> None:
+    response.delete_cookie("builderpro_auth", path="/")
+    response.delete_cookie("builderpro_role", path="/")
+
+
 @router.post("/signin", response_model=SignInResponse)
 def sign_in(payload: SignInRequest, db: Session = Depends(get_db)):
     email = _normalize_email(payload.email)
@@ -232,6 +248,58 @@ def sign_in(payload: SignInRequest, db: Session = Depends(get_db)):
     return SignInResponse(
         access_token=access_token,
         token_type=token_type,
+        role=role,
+        email=email,
+        workspace_id=workspace_id,
+        workspace_name=workspace_name,
+    )
+
+
+@router.post("/signout", response_model=SignOutResponse)
+def sign_out(response: Response, authorization: str | None = Header(default=None)):
+    # Sign-out should be idempotent for frontend simplicity.
+    # If the client has a bearer token, ask Supabase to invalidate that session.
+    access_token: str | None = None
+    if authorization:
+        try:
+            access_token = _extract_bearer_token(authorization)
+        except HTTPException:
+            access_token = None
+
+    if access_token:
+        try:
+            _supabase_request("POST", "/auth/v1/logout", bearer_token=access_token)
+        except HTTPException as exc:
+            if exc.status_code >= 500:
+                raise
+
+    _clear_auth_cookies(response)
+    return SignOutResponse(message="Signed out successfully")
+
+
+@router.get("/me", response_model=SessionInfoResponse)
+def get_session_info(
+    db: Session = Depends(get_db),
+    authorization: str | None = Header(default=None),
+):
+    email = _current_user_email_from_token(authorization)
+
+    user = db.query(User).filter(func.lower(User.email) == email).first()
+    if not user:
+        user = _get_or_create_user(db, email=email, full_name=None, role="user")
+        db.commit()
+
+    role, membership = _membership_role_for_signin(db, user)
+    workspace_name = None
+    workspace_id = None
+
+    if membership:
+        workspace = db.query(Workspace).filter(Workspace.id == membership.workspace_id).first()
+        if workspace:
+            workspace_id = str(workspace.id)
+            workspace_name = workspace.name
+
+    return SessionInfoResponse(
         role=role,
         email=email,
         workspace_id=workspace_id,

@@ -1,11 +1,8 @@
 /**
- * Central store for the prototype.
- * Wraps hardcoded seed data in React state so it can be mutated
- * by the Record Builder, Projects page, etc. and shared across
- * the component tree via context.
+ * Central app store backed by the live FastAPI API.
  *
- * When the real backend is wired up, replace this context with
- * TanStack Query cache and API calls.
+ * It preserves the same component-facing interface as the earlier
+ * prototype store while syncing reads and mutations to the backend.
  */
 "use client";
 
@@ -13,10 +10,10 @@ import React, {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
 } from "react";
-import { v4 as uuidv4 } from "uuid";
 import type {
   Material,
   Vendor,
@@ -25,42 +22,45 @@ import type {
   ProjectItem,
 } from "@/types";
 import {
-  SEED_MATERIALS,
-  SEED_VENDORS,
   SEED_CUSTOMERS,
+  SEED_MATERIALS,
   SEED_PROJECTS,
+  SEED_VENDORS,
 } from "@/data/seed";
+import {
+  customersApi,
+  materialsApi,
+  projectItemsApi,
+  projectsApi,
+  vendorsApi,
+} from "@/services/api";
 
-// ─── Context value type ──────────────────────────────────────
 interface StoreValue {
   materials: Material[];
   vendors: Vendor[];
   customers: Customer[];
   projects: Project[];
+  isLoading: boolean;
+  refreshData: () => Promise<void>;
 
-  /** Add a line item to a project and return the new item. */
   addItemToProject: (
     projectId: string,
     material: Material,
     quantity: number,
     wastePctOverride?: number,
     unitCostOverride?: number,
-  ) => ProjectItem;
+  ) => Promise<ProjectItem | null>;
 
-  /** Remove a line item from a project. */
-  removeItemFromProject: (projectId: string, itemId: string) => void;
+  removeItemFromProject: (projectId: string, itemId: string) => Promise<void>;
 
-  /** Update quantity / waste / cost of an existing line item. */
   updateProjectItem: (
     projectId: string,
     itemId: string,
     patch: Partial<Pick<ProjectItem, "quantity" | "waste_pct" | "unit_cost" | "notes">>,
-  ) => void;
+  ) => Promise<void>;
 
-  /** Create a new empty project. */
-  createProject: (name: string, customerId: string) => Project;
+  createProject: (name: string, customerId: string) => Promise<Project | null>;
 
-  /** Lookup helpers */
   getMaterialById: (id: string) => Material | undefined;
   getVendorById: (id: string) => Vendor | undefined;
   getCustomerById: (id: string) => Customer | undefined;
@@ -69,97 +69,153 @@ interface StoreValue {
 
 const StoreContext = createContext<StoreValue | null>(null);
 
-// ─── Calculation helpers ─────────────────────────────────────
-
-/** total_qty = quantity × (1 + waste_pct / 100) */
-function calcTotalQty(quantity: number, wastePct: number): number {
-  return +(quantity * (1 + wastePct / 100)).toFixed(3);
-}
-
-/** line_subtotal = total_qty × unit_cost */
-function calcLineSubtotal(totalQty: number, unitCost: number): number {
-  return +(totalQty * unitCost).toFixed(2);
-}
-
-// ─── Provider ────────────────────────────────────────────────
 export function StoreProvider({ children }: { children: React.ReactNode }) {
-  const [materials] = useState<Material[]>(SEED_MATERIALS);
-  const [vendors] = useState<Vendor[]>(SEED_VENDORS);
-  const [customers] = useState<Customer[]>(SEED_CUSTOMERS);
-  const [projects, setProjects] = useState<Project[]>(SEED_PROJECTS);
+  const [materials, setMaterials] = useState<Material[]>([]);
+  const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // ── Lookups ──
+  const applySnapshot = useCallback((snapshot: {
+    materials: Material[];
+    vendors: Vendor[];
+    customers: Customer[];
+    projects: Project[];
+  }) => {
+    setMaterials(snapshot.materials);
+    setVendors(snapshot.vendors);
+    setCustomers(snapshot.customers);
+    setProjects(snapshot.projects);
+  }, []);
+
+  const refreshData = useCallback(async () => {
+    const [nextMaterials, nextVendors, nextCustomers, nextProjects] = await Promise.all([
+      materialsApi.list(),
+      vendorsApi.list(),
+      customersApi.list(),
+      projectsApi.list(),
+    ]);
+
+    applySnapshot({
+      materials: nextMaterials,
+      vendors: nextVendors,
+      customers: nextCustomers,
+      projects: nextProjects,
+    });
+  }, [applySnapshot]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadInitialData() {
+      setIsLoading(true);
+      try {
+        const [nextMaterials, nextVendors, nextCustomers, nextProjects] = await Promise.all([
+          materialsApi.list(),
+          vendorsApi.list(),
+          customersApi.list(),
+          projectsApi.list(),
+        ]);
+
+        if (!active) return;
+
+        applySnapshot({
+          materials: nextMaterials,
+          vendors: nextVendors,
+          customers: nextCustomers,
+          projects: nextProjects,
+        });
+      } catch (error) {
+        console.warn("BuilderPro live sync failed; showing local fallback data.", error);
+        if (!active) return;
+
+        applySnapshot({
+          materials: SEED_MATERIALS,
+          vendors: SEED_VENDORS,
+          customers: SEED_CUSTOMERS,
+          projects: SEED_PROJECTS,
+        });
+      } finally {
+        if (active) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    void loadInitialData();
+
+    return () => {
+      active = false;
+    };
+  }, [applySnapshot]);
+
   const getMaterialById = useCallback(
-    (id: string) => materials.find((m) => m.id === id),
+    (id: string) => materials.find((material) => material.id === id),
     [materials],
   );
+
   const getVendorById = useCallback(
-    (id: string) => vendors.find((v) => v.id === id),
+    (id: string) => vendors.find((vendor) => vendor.id === id),
     [vendors],
   );
+
   const getCustomerById = useCallback(
-    (id: string) => customers.find((c) => c.id === id),
+    (id: string) => customers.find((customer) => customer.id === id),
     [customers],
   );
+
   const getProjectById = useCallback(
-    (id: string) => projects.find((p) => p.id === id),
+    (id: string) => projects.find((project) => project.id === id),
     [projects],
   );
 
-  // ── Mutations ──
   const addItemToProject = useCallback(
-    (
+    async (
       projectId: string,
       material: Material,
       quantity: number,
       wastePctOverride?: number,
       unitCostOverride?: number,
-    ): ProjectItem => {
-      const wastePct = wastePctOverride ?? material.default_waste_pct;
-      const unitCost = unitCostOverride ?? material.unit_cost;
-      const totalQty = calcTotalQty(quantity, wastePct);
-      const lineSubtotal = calcLineSubtotal(totalQty, unitCost);
-      const now = new Date().toISOString();
-
-      const item: ProjectItem = {
-        id: uuidv4(),
-        project_id: projectId,
+    ) => {
+      const created = await projectItemsApi.create(projectId, {
         material_id: material.id,
         quantity,
         unit_type: material.unit_type,
-        unit_cost: unitCost,
-        waste_pct: wastePct,
-        total_qty: totalQty,
-        line_subtotal: lineSubtotal,
+        unit_cost: unitCostOverride ?? material.unit_cost,
+        waste_pct: wastePctOverride ?? material.default_waste_pct,
         notes: null,
-        created_at: now,
-        updated_at: now,
-      };
+      });
 
       setProjects((prev) =>
-        prev.map((p) =>
-          p.id === projectId
-            ? { ...p, items: [...p.items, item], updated_at: now }
-            : p,
+        prev.map((project) =>
+          project.id === projectId
+            ? {
+                ...project,
+                items: [...project.items, created],
+                updated_at: created.updated_at,
+              }
+            : project,
         ),
       );
 
-      return item;
+      return created;
     },
     [],
   );
 
   const removeItemFromProject = useCallback(
-    (projectId: string, itemId: string) => {
+    async (projectId: string, itemId: string) => {
+      await projectItemsApi.delete(projectId, itemId);
+
       setProjects((prev) =>
-        prev.map((p) =>
-          p.id === projectId
+        prev.map((project) =>
+          project.id === projectId
             ? {
-                ...p,
-                items: p.items.filter((i) => i.id !== itemId),
+                ...project,
+                items: project.items.filter((item) => item.id !== itemId),
                 updated_at: new Date().toISOString(),
               }
-            : p,
+            : project,
         ),
       );
     },
@@ -167,34 +223,21 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   );
 
   const updateProjectItem = useCallback(
-    (
+    async (
       projectId: string,
       itemId: string,
       patch: Partial<Pick<ProjectItem, "quantity" | "waste_pct" | "unit_cost" | "notes">>,
     ) => {
+      const updated = await projectItemsApi.update(projectId, itemId, patch);
+
       setProjects((prev) =>
-        prev.map((p) => {
-          if (p.id !== projectId) return p;
+        prev.map((project) => {
+          if (project.id !== projectId) return project;
+
           return {
-            ...p,
-            updated_at: new Date().toISOString(),
-            items: p.items.map((item) => {
-              if (item.id !== itemId) return item;
-              const qty = patch.quantity ?? item.quantity;
-              const wp = patch.waste_pct ?? item.waste_pct;
-              const uc = patch.unit_cost ?? item.unit_cost;
-              const totalQty = calcTotalQty(qty, wp);
-              return {
-                ...item,
-                ...patch,
-                quantity: qty,
-                waste_pct: wp,
-                unit_cost: uc,
-                total_qty: totalQty,
-                line_subtotal: calcLineSubtotal(totalQty, uc),
-                updated_at: new Date().toISOString(),
-              };
-            }),
+            ...project,
+            updated_at: updated.updated_at,
+            items: project.items.map((item) => (item.id === itemId ? updated : item)),
           };
         }),
       );
@@ -203,22 +246,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   );
 
   const createProject = useCallback(
-    (name: string, customerId: string): Project => {
-      const now = new Date().toISOString();
-      const project: Project = {
-        id: uuidv4(),
+    async (name: string, customerId: string) => {
+      const created = await projectsApi.create({
         name,
         customer_id: customerId,
-        status: "draft",
-        default_tax_pct: 0,
-        default_waste_pct: 10,
-        created_by: null,
-        created_at: now,
-        updated_at: now,
-        items: [],
-      };
-      setProjects((prev) => [...prev, project]);
-      return project;
+      });
+
+      setProjects((prev) => [...prev, { ...created, items: created.items ?? [] }]);
+      return created;
     },
     [],
   );
@@ -229,6 +264,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       vendors,
       customers,
       projects,
+      isLoading,
+      refreshData,
       addItemToProject,
       removeItemFromProject,
       updateProjectItem,
@@ -243,6 +280,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       vendors,
       customers,
       projects,
+      isLoading,
+      refreshData,
       addItemToProject,
       removeItemFromProject,
       updateProjectItem,
@@ -259,7 +298,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** Hook to access the prototype store. Throws if used outside provider. */
 export function useStore(): StoreValue {
   const ctx = useContext(StoreContext);
   if (!ctx) throw new Error("useStore must be used within <StoreProvider>");

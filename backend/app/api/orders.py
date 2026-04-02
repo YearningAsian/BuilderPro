@@ -81,14 +81,15 @@ def update_order(item_id: UUID, item: ProjectItemUpdate, db: Session = Depends(g
     
     update_data = item.dict(exclude_unset=True)
     
-    # Recalculate totals if quantity or waste_pct changed
-    if "quantity" in update_data or "waste_pct" in update_data:
+    # Recalculate totals if quantity, unit_cost, or waste_pct changed
+    if "quantity" in update_data or "waste_pct" in update_data or "unit_cost" in update_data:
         quantity = update_data.get("quantity", db_item.quantity)
         waste_pct = update_data.get("waste_pct", db_item.waste_pct)
-        
+        unit_cost = update_data.get("unit_cost", db_item.unit_cost)
+
         total_qty = quantity * (1 + waste_pct / 100)
-        line_subtotal = total_qty * db_item.unit_cost
-        
+        line_subtotal = total_qty * unit_cost
+
         update_data["total_qty"] = total_qty
         update_data["line_subtotal"] = line_subtotal
     

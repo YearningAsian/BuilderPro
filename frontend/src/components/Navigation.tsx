@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
+import { useSignOut } from "@/hooks/useSignOut";
+import { getActiveSession } from "@/lib/auth";
 
 /**
  * HubSpot-inspired sidebar navigation.
@@ -33,6 +35,12 @@ const icons: Record<string, React.ReactNode> = {
       <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35m0 0A7.5 7.5 0 1110.65 4.65a7.5 7.5 0 016 12" />
     </svg>
   ),
+  settings: (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317a1 1 0 011.35-.936l.906.363a1 1 0 001.06-.218l.642-.643a1 1 0 011.414 0l1.414 1.414a1 1 0 010 1.414l-.643.643a1 1 0 00-.218 1.06l.363.906a1 1 0 01-.936 1.35H16a1 1 0 00-.949.684l-.31.93a1 1 0 01-.95.684h-2.582a1 1 0 01-.95-.684l-.31-.93A1 1 0 008 10H6.964a1 1 0 01-.936-1.35l.363-.906a1 1 0 00-.218-1.06L5.53 6.04a1 1 0 010-1.414l1.414-1.414a1 1 0 011.414 0l.643.643a1 1 0 001.06.218l.264-.106z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 15.5A3.5 3.5 0 1012 8.5a3.5 3.5 0 000 7z" />
+    </svg>
+  ),
 };
 
 interface NavItem {
@@ -51,6 +59,11 @@ const NAV_ITEMS: NavItem[] = [
 export default function Navigation() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { signOut, isSigningOut } = useSignOut();
+  const currentUser = getActiveSession();
+  const navItems = currentUser?.role === "admin"
+    ? [...NAV_ITEMS, { label: "Settings", href: "/settings", icon: "settings" as const }]
+    : NAV_ITEMS;
 
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);
@@ -69,7 +82,7 @@ export default function Navigation() {
 
         {/* Nav links */}
         <nav className="flex-1 py-4 space-y-1 px-3">
-          {NAV_ITEMS.map((item) => {
+          {navItems.map((item) => {
             const active = isActive(item.href);
             return (
               <Link
@@ -89,8 +102,19 @@ export default function Navigation() {
         </nav>
 
         {/* Footer */}
-        <div className="px-5 py-4 border-t border-white/10 text-xs text-gray-400">
-          BuilderPro v0.1
+        <div className="px-3 py-4 border-t border-white/10 space-y-2">
+          <button
+            type="button"
+            onClick={signOut}
+            disabled={isSigningOut}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-300 hover:bg-white/10 hover:text-white disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16 17l5-5m0 0l-5-5m5 5H9m4 5v1a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h5a2 2 0 012 2v1" />
+            </svg>
+            {isSigningOut ? "Signing out..." : "Sign Out"}
+          </button>
+          <div className="px-2 text-xs text-gray-400">BuilderPro v0.1</div>
         </div>
       </aside>
 
@@ -117,7 +141,7 @@ export default function Navigation() {
       {/* Mobile dropdown */}
       {mobileOpen && (
         <div className="md:hidden fixed top-14 inset-x-0 bg-[#2d3748] border-t border-white/10 z-30 py-2 px-3 space-y-1 shadow-lg">
-          {NAV_ITEMS.map((item) => {
+          {navItems.map((item) => {
             const active = isActive(item.href);
             return (
               <Link
@@ -135,6 +159,20 @@ export default function Navigation() {
               </Link>
             );
           })}
+          <button
+            type="button"
+            onClick={() => {
+              setMobileOpen(false);
+              void signOut();
+            }}
+            disabled={isSigningOut}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-300 hover:bg-white/10 hover:text-white disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16 17l5-5m0 0l-5-5m5 5H9m4 5v1a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h5a2 2 0 012 2v1" />
+            </svg>
+            {isSigningOut ? "Signing out..." : "Sign Out"}
+          </button>
         </div>
       )}
     </>

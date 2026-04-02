@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { FormEvent, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
 type FormErrors = {
   inviteToken?: string;
@@ -17,6 +17,7 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function JoinInvitePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [inviteToken, setInviteToken] = useState("");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -25,6 +26,19 @@ export default function JoinInvitePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState<FormErrors>({});
   const [successMessage, setSuccessMessage] = useState("");
+
+  useEffect(() => {
+    const tokenFromQuery = searchParams.get("token") || searchParams.get("invite_token");
+    const emailFromQuery = searchParams.get("email");
+
+    if (tokenFromQuery) {
+      setInviteToken(tokenFromQuery);
+    }
+
+    if (emailFromQuery) {
+      setEmail(emailFromQuery);
+    }
+  }, [searchParams]);
 
   const canSubmit = useMemo(
     () =>
@@ -79,7 +93,7 @@ export default function JoinInvitePage() {
     setIsSubmitting(true);
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001/api";
+      const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
       const response = await fetch(`${baseUrl}/auth/join-invite`, {
         method: "POST",
         headers: {
