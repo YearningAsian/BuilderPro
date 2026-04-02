@@ -4,7 +4,7 @@
  * The frontend now uses these methods for live reads and writes,
  * while keeping the existing UI components and types intact.
  */
-import { getActiveSession } from "@/lib/auth";
+import { clearLocalAuthState, getActiveSession } from "@/lib/auth";
 import type {
   Material,
   MaterialCreate,
@@ -67,6 +67,22 @@ function getAuthHeaders(extraHeaders?: HeadersInit): HeadersInit {
   };
 }
 
+function handleExpiredSession(message: string) {
+  if (typeof window === "undefined") return;
+
+  clearLocalAuthState();
+  sessionStorage.setItem("builderpro_flash_message", message);
+
+  const currentPath = `${window.location.pathname}${window.location.search}`;
+  const signInUrl = new URL("/signin", window.location.origin);
+  if (currentPath && currentPath !== "/signin") {
+    signInUrl.searchParams.set("next", currentPath);
+  }
+  signInUrl.searchParams.set("signed_out", "1");
+
+  window.location.replace(signInUrl.toString());
+}
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     ...init,
@@ -86,18 +102,26 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   }
 
   if (!res.ok) {
+    let detailMessage = "";
+
     if (payload && typeof payload === "object" && "detail" in payload) {
       const detail = (payload as { detail?: unknown }).detail;
       if (typeof detail === "string" && detail.trim()) {
-        throw new Error(detail);
+        detailMessage = detail;
       }
+    } else if (typeof payload === "string" && payload.trim()) {
+      detailMessage = payload;
     }
 
-    if (typeof payload === "string" && payload.trim()) {
-      throw new Error(payload);
+    const isExpiredToken =
+      res.status === 401 &&
+      /invalid jwt|token is expired|jwt expired|invalid claims/i.test(detailMessage);
+
+    if (isExpiredToken) {
+      handleExpiredSession("Your session expired. Please sign in again.");
     }
 
-    throw new Error(`API ${res.status}`);
+    throw new Error(detailMessage || `API ${res.status}`);
   }
 
   if (res.status === 204 || !bodyText) {

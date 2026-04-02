@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSignOut } from "@/hooks/useSignOut";
 import { getActiveSession } from "@/lib/auth";
 
@@ -59,11 +59,20 @@ const NAV_ITEMS: NavItem[] = [
 export default function Navigation() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [currentUser, setCurrentUser] = useState<ReturnType<typeof getActiveSession>>(null);
   const { signOut, isSigningOut } = useSignOut();
-  const currentUser = getActiveSession();
-  const navItems = currentUser?.role === "admin"
-    ? [...NAV_ITEMS, { label: "Settings", href: "/settings", icon: "settings" as const }]
-    : NAV_ITEMS;
+
+  useEffect(() => {
+    setCurrentUser(getActiveSession());
+  }, []);
+
+  const navItems = useMemo(
+    () =>
+      currentUser?.role === "admin"
+        ? [...NAV_ITEMS, { label: "Settings", href: "/settings", icon: "settings" as const }]
+        : NAV_ITEMS,
+    [currentUser?.role],
+  );
 
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);

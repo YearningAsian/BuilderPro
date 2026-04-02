@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import Navigation from "@/components/Navigation";
 import { getActiveSession } from "@/lib/auth";
@@ -13,9 +13,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isAuthRoute = AUTH_ROUTES.includes(pathname);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [currentUser, setCurrentUser] = useState<ReturnType<typeof getActiveSession>>(null);
   const { signOut, isSigningOut } = useSignOut();
 
-  const currentUser = getActiveSession();
+  useEffect(() => {
+    setCurrentUser(getActiveSession());
+  }, []);
+
   const initials = currentUser?.email ? currentUser.email.slice(0, 2).toUpperCase() : "BP";
 
   return (
