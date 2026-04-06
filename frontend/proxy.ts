@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 const AUTH_ROUTES = new Set(["/signin", "/signup", "/join-invite", "/forgot-password"]);
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
   const isAuthRoute = AUTH_ROUTES.has(pathname);
   const isAuthed = request.cookies.get("builderpro_auth")?.value === "1";

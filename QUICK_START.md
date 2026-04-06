@@ -17,7 +17,7 @@ cd /home/colin/BuilderPro
 This starts:
 - Backend API on `http://localhost:8000`
 - API docs on `http://localhost:8000/docs`
-- Frontend on `http://localhost:3000`
+- Frontend on `http://localhost:3500`
 
 Press `Ctrl+C` in that terminal to stop both services.
 
@@ -45,7 +45,7 @@ DATABASE_URL=sqlite:///./builderpro.db uvicorn app.main:app --reload --host 0.0.
 ```bash
 cd frontend
 npm install
-npm run dev -- --port 3000
+npm run dev -- --port 3500
 ```
 
 ---
@@ -66,5 +66,5 @@ docker compose up --build
 ```bash
 curl http://localhost:8000/health
 curl http://localhost:8000/health/db
-curl -I http://localhost:3000
+curl -I http://localhost:3500
 ```

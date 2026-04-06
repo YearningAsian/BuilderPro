@@ -4,7 +4,7 @@ import { useState, useMemo } from "react";
 import Link from "next/link";
 import { useStore } from "@/hooks/useStore";
 import { useDebounce } from "@/hooks/useDebounce";
-import { formatCurrency, formatPercent } from "@/lib/format";
+import { formatCurrency } from "@/lib/format";
 import type { Material, Project } from "@/types";
 
 type SearchTab = "all" | "materials" | "projects";

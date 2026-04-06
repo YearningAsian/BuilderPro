@@ -14,20 +14,17 @@ import React, {
   useMemo,
   useState,
 } from "react";
+import { usePathname } from "next/navigation";
 import type {
   Material,
   MaterialCreate,
   Vendor,
+  VendorCreate,
   Customer,
+  CustomerCreate,
   Project,
   ProjectItem,
 } from "@/types";
-import {
-  SEED_CUSTOMERS,
-  SEED_MATERIALS,
-  SEED_PROJECTS,
-  SEED_VENDORS,
-} from "@/data/seed";
 import {
   customersApi,
   materialsApi,
@@ -35,6 +32,7 @@ import {
   projectsApi,
   vendorsApi,
 } from "@/services/api";
+import { getActiveSession } from "@/lib/auth";
 
 interface StoreValue {
   materials: Material[];
@@ -57,13 +55,19 @@ interface StoreValue {
   updateProjectItem: (
     projectId: string,
     itemId: string,
-    patch: Partial<Pick<ProjectItem, "quantity" | "waste_pct" | "unit_cost" | "notes">>,
+    patch: Partial<Pick<ProjectItem, "quantity" | "waste_pct" | "unit_cost" | "order_status" | "po_number" | "purchase_notes" | "notes">>,
   ) => Promise<void>;
 
   createProject: (name: string, customerId: string) => Promise<Project | null>;
   createMaterial: (data: MaterialCreate) => Promise<Material>;
   updateMaterial: (id: string, data: Partial<MaterialCreate>) => Promise<Material>;
   deleteMaterial: (id: string) => Promise<void>;
+  createCustomer: (data: CustomerCreate) => Promise<Customer>;
+  updateCustomer: (id: string, data: Partial<CustomerCreate>) => Promise<Customer>;
+  deleteCustomer: (id: string) => Promise<void>;
+  createVendor: (data: VendorCreate) => Promise<Vendor>;
+  updateVendor: (id: string, data: Partial<VendorCreate>) => Promise<Vendor>;
+  deleteVendor: (id: string) => Promise<void>;
 
   getMaterialById: (id: string) => Material | undefined;
   getVendorById: (id: string) => Vendor | undefined;
@@ -72,8 +76,11 @@ interface StoreValue {
 }
 
 const StoreContext = createContext<StoreValue | null>(null);
+const AUTH_ROUTES = new Set(["/signin", "/signup", "/join-invite", "/forgot-password"]);
 
 export function StoreProvider({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  const isAuthRoute = AUTH_ROUTES.has(pathname);
   const [materials, setMaterials] = useState<Material[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -93,6 +100,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const refreshData = useCallback(async () => {
+    if (isAuthRoute || !getActiveSession()) {
+      applySnapshot({ materials: [], vendors: [], customers: [], projects: [] });
+      return;
+    }
+
     const [nextMaterials, nextVendors, nextCustomers, nextProjects] = await Promise.all([
       materialsApi.list(),
       vendorsApi.list(),
@@ -106,13 +118,26 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       customers: nextCustomers,
       projects: nextProjects,
     });
-  }, [applySnapshot]);
+  }, [applySnapshot, isAuthRoute]);
 
   useEffect(() => {
     let active = true;
 
     async function loadInitialData() {
       setIsLoading(true);
+
+      if (isAuthRoute || !getActiveSession()) {
+        if (!active) return;
+        applySnapshot({
+          materials: [],
+          vendors: [],
+          customers: [],
+          projects: [],
+        });
+        setIsLoading(false);
+        return;
+      }
+
       try {
         const [nextMaterials, nextVendors, nextCustomers, nextProjects] = await Promise.all([
           materialsApi.list(),
@@ -130,14 +155,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           projects: nextProjects,
         });
       } catch (error) {
-        console.warn("BuilderPro live sync failed; showing local fallback data.", error);
+        console.warn("BuilderPro live sync failed; showing an empty workspace instead of prototype seed data.", error);
         if (!active) return;
 
         applySnapshot({
-          materials: SEED_MATERIALS,
-          vendors: SEED_VENDORS,
-          customers: SEED_CUSTOMERS,
-          projects: SEED_PROJECTS,
+          materials: [],
+          vendors: [],
+          customers: [],
+          projects: [],
         });
       } finally {
         if (active) {
@@ -151,7 +176,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     return () => {
       active = false;
     };
-  }, [applySnapshot]);
+  }, [applySnapshot, isAuthRoute]);
 
   const getMaterialById = useCallback(
     (id: string) => materials.find((material) => material.id === id),
@@ -187,6 +212,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         unit_type: material.unit_type,
         unit_cost: unitCostOverride ?? material.unit_cost,
         waste_pct: wastePctOverride ?? material.default_waste_pct,
+        order_status: "draft",
         notes: null,
       });
 
@@ -230,7 +256,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     async (
       projectId: string,
       itemId: string,
-      patch: Partial<Pick<ProjectItem, "quantity" | "waste_pct" | "unit_cost" | "notes">>,
+      patch: Partial<Pick<ProjectItem, "quantity" | "waste_pct" | "unit_cost" | "order_status" | "po_number" | "purchase_notes" | "notes">>,
     ) => {
       const updated = await projectItemsApi.update(projectId, itemId, patch);
 
@@ -279,6 +305,40 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setMaterials((prev) => prev.filter((material) => material.id !== id));
   }, []);
 
+  const createCustomer = useCallback(async (data: CustomerCreate) => {
+    const created = await customersApi.create(data);
+    setCustomers((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
+    return created;
+  }, []);
+
+  const updateCustomer = useCallback(async (id: string, data: Partial<CustomerCreate>) => {
+    const updated = await customersApi.update(id, data);
+    setCustomers((prev) => prev.map((customer) => (customer.id === id ? updated : customer)));
+    return updated;
+  }, []);
+
+  const deleteCustomer = useCallback(async (id: string) => {
+    await customersApi.delete(id);
+    setCustomers((prev) => prev.filter((customer) => customer.id !== id));
+  }, []);
+
+  const createVendor = useCallback(async (data: VendorCreate) => {
+    const created = await vendorsApi.create(data);
+    setVendors((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
+    return created;
+  }, []);
+
+  const updateVendor = useCallback(async (id: string, data: Partial<VendorCreate>) => {
+    const updated = await vendorsApi.update(id, data);
+    setVendors((prev) => prev.map((vendor) => (vendor.id === id ? updated : vendor)));
+    return updated;
+  }, []);
+
+  const deleteVendor = useCallback(async (id: string) => {
+    await vendorsApi.delete(id);
+    setVendors((prev) => prev.filter((vendor) => vendor.id !== id));
+  }, []);
+
   const value = useMemo<StoreValue>(
     () => ({
       materials,
@@ -294,6 +354,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       createMaterial,
       updateMaterial,
       deleteMaterial,
+      createCustomer,
+      updateCustomer,
+      deleteCustomer,
+      createVendor,
+      updateVendor,
+      deleteVendor,
       getMaterialById,
       getVendorById,
       getCustomerById,
@@ -313,6 +379,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       createMaterial,
       updateMaterial,
       deleteMaterial,
+      createCustomer,
+      updateCustomer,
+      deleteCustomer,
+      createVendor,
+      updateVendor,
+      deleteVendor,
       getMaterialById,
       getVendorById,
       getCustomerById,

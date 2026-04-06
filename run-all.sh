@@ -5,6 +5,10 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKEND_DIR="$ROOT_DIR/backend"
 FRONTEND_DIR="$ROOT_DIR/frontend"
 BACKEND_LOG="$ROOT_DIR/.backend.log"
+BACKEND_PORT="${BACKEND_PORT:-8000}"
+FRONTEND_PORT="${FRONTEND_PORT:-3500}"
+BACKEND_DEPS_STAMP="$BACKEND_DIR/.venv/.deps_installed"
+FRONTEND_DEPS_STAMP="$FRONTEND_DIR/node_modules/.deps_installed"
 
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -13,22 +17,62 @@ require_command() {
   fi
 }
 
-port_in_use() {
-  local port="$1"
-  ss -ltn "( sport = :$port )" | tail -n +2 | grep -q ":$port"
+pick_python() {
+  if command -v python3 >/dev/null 2>&1; then
+    echo "python3"
+    return
+  fi
+
+  if command -v python >/dev/null 2>&1; then
+    echo "python"
+    return
+  fi
+
+  echo ""
 }
 
-require_command python3
-require_command npm
-require_command ss
+port_in_use() {
+  local port="$1"
 
-if port_in_use 3000; then
-  echo "Port 3000 is already in use. Stop the existing frontend process, then re-run ./run-all.sh"
+  if command -v ss >/dev/null 2>&1; then
+    ss -ltn "( sport = :$port )" | tail -n +2 | grep -q ":$port"
+    return
+  fi
+
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -iTCP:"$port" -sTCP:LISTEN -t >/dev/null 2>&1
+    return
+  fi
+
+  if command -v powershell.exe >/dev/null 2>&1; then
+    powershell.exe -NoProfile -Command "if (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }" >/dev/null 2>&1
+    return
+  fi
+
+  if command -v netstat >/dev/null 2>&1; then
+    netstat -an | grep -E "[:.]$port[[:space:]]+.*LISTENING|[:.]$port[[:space:]]+.*LISTEN" >/dev/null 2>&1
+    return
+  fi
+
+  # No supported port check command was found; continue without blocking startup.
+  return 1
+}
+
+PYTHON_CMD="$(pick_python)"
+if [ -z "$PYTHON_CMD" ]; then
+  echo "Missing required command: python3 or python"
   exit 1
 fi
 
-if port_in_use 8000; then
-  echo "Port 8000 is already in use. Stop the existing backend process, then re-run ./run-all.sh"
+require_command npm
+
+if port_in_use "$FRONTEND_PORT"; then
+  echo "Port $FRONTEND_PORT is already in use. Stop the existing frontend process, or run with a different FRONTEND_PORT."
+  exit 1
+fi
+
+if port_in_use "$BACKEND_PORT"; then
+  echo "Port $BACKEND_PORT is already in use. Stop the existing backend process, or run with a different BACKEND_PORT."
   exit 1
 fi
 
@@ -36,23 +80,35 @@ cd "$BACKEND_DIR"
 
 if [ ! -d ".venv" ]; then
   echo "Creating backend virtual environment..."
-  python3 -m venv .venv
+  "$PYTHON_CMD" -m venv .venv
 fi
 
-PYTHON_BIN="$BACKEND_DIR/.venv/bin/python"
-PIP_BIN="$BACKEND_DIR/.venv/bin/pip"
-BACKEND_DEPS_STAMP="$BACKEND_DIR/.venv/.deps_installed"
+if [ -x "$BACKEND_DIR/.venv/Scripts/python.exe" ]; then
+  PYTHON_BIN="$BACKEND_DIR/.venv/Scripts/python.exe"
+elif [ -x "$BACKEND_DIR/.venv/bin/python" ]; then
+  PYTHON_BIN="$BACKEND_DIR/.venv/bin/python"
+else
+  echo "Could not find python executable inside backend/.venv"
+  exit 1
+fi
 
 if [ ! -f "$BACKEND_DEPS_STAMP" ] || [ requirements.txt -nt "$BACKEND_DEPS_STAMP" ]; then
   echo "Installing backend dependencies..."
-  "$PIP_BIN" install -r requirements.txt
+  "$PYTHON_BIN" -m pip install --upgrade pip
+  "$PYTHON_BIN" -m pip install -r requirements.txt
   touch "$BACKEND_DEPS_STAMP"
 fi
 
 cd "$FRONTEND_DIR"
-if [ ! -d "node_modules" ]; then
+if [ ! -d "node_modules" ] || [ ! -f "$FRONTEND_DEPS_STAMP" ] || [ package-lock.json -nt "$FRONTEND_DEPS_STAMP" ] || [ package.json -nt "$FRONTEND_DEPS_STAMP" ]; then
   echo "Installing frontend dependencies..."
-  npm install
+  if [ -f "package-lock.json" ]; then
+    npm ci
+  else
+    npm install
+  fi
+  mkdir -p node_modules
+  touch "$FRONTEND_DEPS_STAMP"
 fi
 
 cd "$BACKEND_DIR"
@@ -62,8 +118,8 @@ if [ -z "${DATABASE_URL:-}" ] && [ ! -f ".env" ]; then
   BACKEND_ENV+=("DATABASE_URL=sqlite:///./builderpro.db")
 fi
 
-echo "Starting backend on http://localhost:8000 ..."
-env "${BACKEND_ENV[@]}" "$PYTHON_BIN" -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 >"$BACKEND_LOG" 2>&1 &
+echo "Starting backend on http://localhost:$BACKEND_PORT ..."
+env "${BACKEND_ENV[@]}" "$PYTHON_BIN" -m uvicorn app.main:app --reload --host 0.0.0.0 --port "$BACKEND_PORT" >"$BACKEND_LOG" 2>&1 &
 BACKEND_PID=$!
 
 cleanup() {
@@ -83,14 +139,15 @@ if ! kill -0 "$BACKEND_PID" >/dev/null 2>&1; then
 fi
 
 echo "Backend started (PID $BACKEND_PID)."
-echo "Starting frontend on http://localhost:3000 ..."
+echo "Starting frontend on http://localhost:$FRONTEND_PORT ..."
 echo ""
 echo "App URLs:"
-echo "- Frontend: http://localhost:3000"
-echo "- Backend:  http://localhost:8000"
-echo "- API Docs: http://localhost:8000/docs"
+echo "- Frontend: http://localhost:$FRONTEND_PORT"
+echo "- Backend:  http://localhost:$BACKEND_PORT"
+echo "- API Docs: http://localhost:$BACKEND_PORT/docs"
 echo ""
+echo "Tip: override ports with FRONTEND_PORT=3000 or BACKEND_PORT=8001 if needed."
 echo "Press Ctrl+C to stop both services."
 
 cd "$FRONTEND_DIR"
-npm run dev -- --port 3000
+npm run dev -- --port "$FRONTEND_PORT"

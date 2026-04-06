@@ -56,6 +56,7 @@ class CustomerUpdate(BaseModel):
 
 class Customer(CustomerBase):
     id: UUID
+    workspace_id: UUID
     created_at: datetime
 
     class Config:
@@ -87,6 +88,7 @@ class VendorUpdate(BaseModel):
 
 class Vendor(VendorBase):
     id: UUID
+    workspace_id: UUID
     created_at: datetime
 
     class Config:
@@ -142,6 +144,7 @@ class MaterialUpdate(BaseModel):
 
 class Material(MaterialBase):
     id: UUID
+    workspace_id: UUID
     created_at: datetime
     updated_at: datetime
 
@@ -160,7 +163,12 @@ class ProjectItemBase(BaseModel):
     waste_pct: Decimal = Decimal("0")
     total_qty: Decimal
     line_subtotal: Decimal
+    order_status: Literal["draft", "ordered", "received", "cancelled"] = "draft"
+    po_number: Optional[str] = None
+    purchase_notes: Optional[str] = None
     notes: Optional[str] = None
+    ordered_at: Optional[datetime] = None
+    received_at: Optional[datetime] = None
 
 
 class ProjectItemCreate(BaseModel):
@@ -169,6 +177,9 @@ class ProjectItemCreate(BaseModel):
     unit_type: str
     unit_cost: Decimal
     waste_pct: Decimal = Decimal("0")
+    order_status: Literal["draft", "ordered", "received", "cancelled"] = "draft"
+    po_number: Optional[str] = None
+    purchase_notes: Optional[str] = None
     notes: Optional[str] = None
 
 
@@ -176,12 +187,16 @@ class ProjectItemUpdate(BaseModel):
     quantity: Optional[Decimal] = None
     unit_cost: Optional[Decimal] = None
     waste_pct: Optional[Decimal] = None
+    order_status: Optional[Literal["draft", "ordered", "received", "cancelled"]] = None
+    po_number: Optional[str] = None
+    purchase_notes: Optional[str] = None
     notes: Optional[str] = None
 
 
 class ProjectItem(ProjectItemBase):
     id: UUID
     project_id: UUID
+    workspace_id: UUID
     created_at: datetime
     updated_at: datetime
 
@@ -241,6 +256,7 @@ class ProjectUpdate(BaseModel):
 
 class Project(ProjectBase):
     id: UUID
+    workspace_id: UUID
     created_by: Optional[UUID] = None
     created_at: datetime
     updated_at: datetime

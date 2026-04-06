@@ -17,7 +17,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const { signOut, isSigningOut } = useSignOut();
 
   useEffect(() => {
-    setCurrentUser(getActiveSession());
+    const syncSession = () => setCurrentUser(getActiveSession());
+    const timer = window.setTimeout(syncSession, 0);
+    window.addEventListener("focus", syncSession);
+    window.addEventListener("storage", syncSession);
+
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("focus", syncSession);
+      window.removeEventListener("storage", syncSession);
+    };
   }, []);
 
   const initials = currentUser?.email ? currentUser.email.slice(0, 2).toUpperCase() : "BP";

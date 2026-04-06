@@ -30,6 +30,21 @@ const icons: Record<string, React.ReactNode> = {
       <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 012-2h2a2 2 0 012 2M9 5h6m-3 4v6m-3-3h6" />
     </svg>
   ),
+  orders: (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6M9 8h6m-9 12h12a2 2 0 002-2V6a2 2 0 00-2-2h-1.5a1 1 0 01-.8-.4l-.9-1.2A1 1 0 0014 2h-4a1 1 0 00-.8.4l-.9 1.2a1 1 0 01-.8.4H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+    </svg>
+  ),
+  customers: (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5V4H2v16h5m10 0v-2a4 4 0 00-4-4H9a4 4 0 00-4 4v2m12 0H7m8-11a3 3 0 11-6 0 3 3 0 016 0z" />
+    </svg>
+  ),
+  vendors: (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3 21h18M5 21V8l7-4 7 4v13M9 10h.01M9 13h.01M9 16h.01M15 10h.01M15 13h.01M15 16h.01" />
+    </svg>
+  ),
   search: (
     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35m0 0A7.5 7.5 0 1110.65 4.65a7.5 7.5 0 016 12" />
@@ -53,6 +68,9 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", href: "/", icon: "dashboard" },
   { label: "Materials", href: "/materials", icon: "materials" },
   { label: "Projects", href: "/projects", icon: "projects" },
+  { label: "Orders", href: "/orders", icon: "orders" },
+  { label: "Customers", href: "/customers", icon: "customers" },
+  { label: "Vendors", href: "/vendors", icon: "vendors" },
   { label: "Search", href: "/search", icon: "search" },
 ];
 
@@ -63,7 +81,16 @@ export default function Navigation() {
   const { signOut, isSigningOut } = useSignOut();
 
   useEffect(() => {
-    setCurrentUser(getActiveSession());
+    const syncSession = () => setCurrentUser(getActiveSession());
+    const timer = window.setTimeout(syncSession, 0);
+    window.addEventListener("focus", syncSession);
+    window.addEventListener("storage", syncSession);
+
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("focus", syncSession);
+      window.removeEventListener("storage", syncSession);
+    };
   }, []);
 
   const navItems = useMemo(

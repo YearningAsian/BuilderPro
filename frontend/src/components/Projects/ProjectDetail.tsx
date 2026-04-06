@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useStore } from "@/hooks/useStore";
 import { RecordBuilder } from "@/components/Records/RecordBuilder";
-import { formatCurrency, formatPercent, formatDate } from "@/lib/format";
+import { formatPercent, formatDate } from "@/lib/format";
 import type { ProjectStatus } from "@/types";
 
 const STATUS_COLORS: Record<ProjectStatus, string> = {

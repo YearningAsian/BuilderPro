@@ -1,17 +1,29 @@
+import base64
+import hashlib
+import hmac
 import json
 import secrets
+import time
 from datetime import datetime, timedelta, timezone
+from typing import Literal
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.core.config import SUPABASE_KEY, SUPABASE_URL
+from app.core.config import (
+    ENABLE_LOCAL_AUTH_FALLBACK,
+    SECRET_KEY,
+    SUPABASE_ADMIN_KEY,
+    SUPABASE_KEY,
+    SUPABASE_URL,
+)
 from app.db.base import get_db
-from app.models.models import User, Workspace, WorkspaceInvite, WorkspaceMember
+from app.models.models import AuditLog, User, Workspace, WorkspaceInvite, WorkspaceMember
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -88,27 +100,58 @@ class SignOutResponse(BaseModel):
     message: str
 
 
+class WorkspaceMemberSummary(BaseModel):
+    id: UUID
+    user_id: UUID
+    email: str
+    full_name: str | None = None
+    role: Literal["admin", "user"]
+    created_at: datetime
+
+
+class WorkspaceMemberUpdateRequest(BaseModel):
+    role: Literal["admin", "user"]
+
+
+class AuditLogEntry(BaseModel):
+    id: UUID
+    action: str
+    resource_type: str
+    resource_id: str | None = None
+    user_id: UUID | None = None
+    actor_email: str | None = None
+    details: dict | None = None
+    created_at: datetime
+
+
 def _ensure_supabase_config() -> None:
-    if not SUPABASE_URL or not SUPABASE_KEY:
+    if not SUPABASE_URL or not (SUPABASE_KEY or SUPABASE_ADMIN_KEY):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Supabase auth is not configured on the backend.",
         )
 
 
-def _supabase_request(method: str, path: str, payload: dict | None = None, bearer_token: str | None = None) -> dict:
+def _supabase_request(
+    method: str,
+    path: str,
+    payload: dict | None = None,
+    bearer_token: str | None = None,
+    api_key: str | None = None,
+) -> dict:
     _ensure_supabase_config()
 
+    resolved_api_key = api_key or SUPABASE_KEY or SUPABASE_ADMIN_KEY
     url = f"{SUPABASE_URL.rstrip('/')}{path}"
     body = json.dumps(payload).encode("utf-8") if payload is not None else None
-    authorization_value = f"Bearer {bearer_token}" if bearer_token else f"Bearer {SUPABASE_KEY}"
+    authorization_value = f"Bearer {bearer_token}" if bearer_token else f"Bearer {resolved_api_key}"
 
     request = Request(
         url,
         data=body,
         method=method,
         headers={
-            "apikey": SUPABASE_KEY,
+            "apikey": resolved_api_key,
             "Authorization": authorization_value,
             "Content-Type": "application/json",
             "Accept": "application/json",
@@ -144,6 +187,54 @@ def _supabase_request(method: str, path: str, payload: dict | None = None, beare
 
 def _normalize_email(email: str) -> str:
     return email.strip().lower()
+
+
+def _base64url_encode(value: bytes) -> str:
+    return base64.urlsafe_b64encode(value).decode("utf-8").rstrip("=")
+
+
+def _base64url_decode(value: str) -> bytes:
+    padding = "=" * (-len(value) % 4)
+    return base64.urlsafe_b64decode(f"{value}{padding}".encode("utf-8"))
+
+
+def _create_local_access_token(email: str) -> str:
+    payload = {
+        "email": _normalize_email(email),
+        "iat": int(time.time()),
+        "iss": "builderpro-local-dev",
+    }
+    payload_segment = _base64url_encode(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
+    signature = _base64url_encode(
+        hmac.new(SECRET_KEY.encode("utf-8"), payload_segment.encode("utf-8"), hashlib.sha256).digest()
+    )
+    return f"dev.{payload_segment}.{signature}"
+
+
+def _decode_local_access_token(token: str) -> str | None:
+    if not token.startswith("dev."):
+        return None
+
+    try:
+        _, payload_segment, signature = token.split(".", 2)
+    except ValueError:
+        return None
+
+    expected_signature = _base64url_encode(
+        hmac.new(SECRET_KEY.encode("utf-8"), payload_segment.encode("utf-8"), hashlib.sha256).digest()
+    )
+    if not hmac.compare_digest(signature, expected_signature):
+        return None
+
+    try:
+        payload = json.loads(_base64url_decode(payload_segment).decode("utf-8"))
+    except (json.JSONDecodeError, ValueError, UnicodeDecodeError):
+        return None
+
+    email = payload.get("email")
+    if isinstance(email, str) and email.strip():
+        return _normalize_email(email)
+    return None
 
 
 def _get_or_create_user(db: Session, email: str, full_name: str | None, role: str) -> User:
@@ -223,6 +314,11 @@ def _membership_role_for_session(db: Session, user: User) -> tuple[str, Workspac
 def _register_supabase_user_with_session(email: str, password: str, full_name: str) -> tuple[str | None, str, bool]:
     token_type = "bearer"
 
+    def local_fallback_session() -> tuple[str | None, str, bool]:
+        if ENABLE_LOCAL_AUTH_FALLBACK:
+            return _create_local_access_token(email), token_type, False
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many signup attempts. Please try again shortly.")
+
     try:
         _supabase_request(
             "POST",
@@ -233,20 +329,28 @@ def _register_supabase_user_with_session(email: str, password: str, full_name: s
                 "email_confirm": True,
                 "user_metadata": {"full_name": full_name},
             },
+            api_key=SUPABASE_ADMIN_KEY,
         )
     except HTTPException as exc:
+        if exc.status_code == status.HTTP_429_TOO_MANY_REQUESTS:
+            return local_fallback_session()
         if exc.status_code not in {401, 403, 404}:
             raise
 
-        _supabase_request(
-            "POST",
-            "/auth/v1/signup",
-            payload={
-                "email": email,
-                "password": password,
-                "options": {"data": {"full_name": full_name}},
-            },
-        )
+        try:
+            _supabase_request(
+                "POST",
+                "/auth/v1/signup",
+                payload={
+                    "email": email,
+                    "password": password,
+                    "options": {"data": {"full_name": full_name}},
+                },
+            )
+        except HTTPException as fallback_exc:
+            if fallback_exc.status_code == status.HTTP_429_TOO_MANY_REQUESTS:
+                return local_fallback_session()
+            raise
 
     try:
         auth = _supabase_request(
@@ -255,6 +359,8 @@ def _register_supabase_user_with_session(email: str, password: str, full_name: s
             payload={"email": email, "password": password},
         )
     except HTTPException as exc:
+        if exc.status_code == status.HTTP_429_TOO_MANY_REQUESTS:
+            return local_fallback_session()
         if exc.status_code in {400, 401} and "confirm" in str(exc.detail).lower():
             return None, token_type, True
         raise
@@ -279,6 +385,11 @@ def _extract_bearer_token(authorization: str | None) -> str:
 
 def _current_user_email_from_token(authorization: str | None) -> str:
     access_token = _extract_bearer_token(authorization)
+
+    local_email = _decode_local_access_token(access_token)
+    if local_email:
+        return local_email
+
     profile = _supabase_request("GET", "/auth/v1/user", bearer_token=access_token)
     email = profile.get("email")
 
@@ -286,6 +397,125 @@ def _current_user_email_from_token(authorization: str | None) -> str:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unable to resolve authenticated user.")
 
     return _normalize_email(email)
+
+
+def _resolve_session_user(db: Session, authorization: str | None) -> tuple[User, str, str, WorkspaceMember | None]:
+    email = _current_user_email_from_token(authorization)
+
+    user = db.query(User).filter(func.lower(User.email) == email).first()
+    if not user:
+        user = _get_or_create_user(db, email=email, full_name=None, role="user")
+        db.commit()
+
+    role, membership, session_repaired = _membership_role_for_session(db, user)
+    if session_repaired:
+        db.commit()
+
+    return user, email, role, membership
+
+
+def get_current_user(
+    db: Session = Depends(get_db),
+    authorization: str | None = Header(default=None),
+) -> User:
+    user, _, _, _ = _resolve_session_user(db, authorization)
+    return user
+
+
+def get_current_workspace_id(
+    db: Session = Depends(get_db),
+    authorization: str | None = Header(default=None),
+):
+    _, _, _, membership = _resolve_session_user(db, authorization)
+    if not membership or not membership.workspace_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No active workspace is available for this session.",
+        )
+    return membership.workspace_id
+
+
+def _get_workspace_membership(db: Session, user_id, workspace_id) -> WorkspaceMember | None:
+    return (
+        db.query(WorkspaceMember)
+        .filter(WorkspaceMember.workspace_id == workspace_id, WorkspaceMember.user_id == user_id)
+        .first()
+    )
+
+
+def _require_workspace_admin(db: Session, current_user: User, current_workspace_id) -> WorkspaceMember:
+    membership = _get_workspace_membership(db, current_user.id, current_workspace_id)
+    if not membership:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not a member of the active workspace.",
+        )
+    if membership.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only workspace admins can manage members.",
+        )
+    return membership
+
+
+def _serialize_workspace_member(member: WorkspaceMember) -> WorkspaceMemberSummary:
+    if not member.user:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Workspace member is missing a linked user profile.",
+        )
+
+    return WorkspaceMemberSummary(
+        id=member.id,
+        user_id=member.user_id,
+        email=member.user.email,
+        full_name=member.user.full_name,
+        role=member.role,
+        created_at=member.created_at,
+    )
+
+
+def _record_audit_event(
+    db: Session,
+    *,
+    workspace_id,
+    user_id,
+    action: str,
+    resource_type: str,
+    resource_id: str | None = None,
+    details: dict | None = None,
+) -> AuditLog:
+    event = AuditLog(
+        workspace_id=workspace_id,
+        user_id=user_id,
+        action=action,
+        resource_type=resource_type,
+        resource_id=resource_id,
+        details=json.dumps(details) if details is not None else None,
+    )
+    db.add(event)
+    db.flush()
+    return event
+
+
+def _serialize_audit_event(event: AuditLog) -> AuditLogEntry:
+    parsed_details = None
+    if event.details:
+        try:
+            parsed_details = json.loads(event.details)
+        except json.JSONDecodeError:
+            parsed_details = {"raw": event.details}
+
+    return AuditLogEntry(
+        id=event.id,
+        action=event.action,
+        resource_type=event.resource_type,
+        resource_id=event.resource_id,
+        user_id=event.user_id,
+        actor_email=event.actor.email if event.actor else None,
+        details=parsed_details,
+        created_at=event.created_at,
+    )
 
 
 def _clear_auth_cookies(response: Response) -> None:
@@ -369,16 +599,7 @@ def get_session_info(
     db: Session = Depends(get_db),
     authorization: str | None = Header(default=None),
 ):
-    email = _current_user_email_from_token(authorization)
-
-    user = db.query(User).filter(func.lower(User.email) == email).first()
-    if not user:
-        user = _get_or_create_user(db, email=email, full_name=None, role="user")
-        db.commit()
-
-    role, membership, session_repaired = _membership_role_for_session(db, user)
-    if session_repaired:
-        db.commit()
+    _, email, role, membership = _resolve_session_user(db, authorization)
 
     workspace_name = None
     workspace_id = None
@@ -395,6 +616,153 @@ def get_session_info(
         workspace_id=workspace_id,
         workspace_name=workspace_name,
     )
+
+
+@router.get("/audit-log", response_model=list[AuditLogEntry])
+def list_audit_events(
+    limit: int = 25,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_workspace_id=Depends(get_current_workspace_id),
+):
+    _require_workspace_admin(db, current_user, current_workspace_id)
+
+    bounded_limit = max(1, min(limit, 100))
+    events = (
+        db.query(AuditLog)
+        .filter(AuditLog.workspace_id == current_workspace_id)
+        .order_by(AuditLog.created_at.desc())
+        .limit(bounded_limit)
+        .all()
+    )
+
+    return [_serialize_audit_event(event) for event in events]
+
+
+@router.get("/members", response_model=list[WorkspaceMemberSummary])
+def list_workspace_members(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_workspace_id=Depends(get_current_workspace_id),
+):
+    _require_workspace_admin(db, current_user, current_workspace_id)
+
+    members = (
+        db.query(WorkspaceMember)
+        .join(User, WorkspaceMember.user_id == User.id)
+        .filter(WorkspaceMember.workspace_id == current_workspace_id)
+        .order_by(WorkspaceMember.created_at.asc(), func.lower(User.email).asc())
+        .all()
+    )
+
+    return [_serialize_workspace_member(member) for member in members]
+
+
+@router.patch("/members/{member_id}", response_model=WorkspaceMemberSummary)
+def update_workspace_member(
+    member_id: str,
+    payload: WorkspaceMemberUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_workspace_id=Depends(get_current_workspace_id),
+):
+    _require_workspace_admin(db, current_user, current_workspace_id)
+
+    try:
+        member_lookup_id = UUID(str(member_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid workspace member id.") from exc
+
+    member = (
+        db.query(WorkspaceMember)
+        .join(User, WorkspaceMember.user_id == User.id)
+        .filter(WorkspaceMember.id == member_lookup_id, WorkspaceMember.workspace_id == current_workspace_id)
+        .first()
+    )
+    if not member:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace member not found.")
+
+    if member.user_id == current_user.id and member.role != payload.role:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You cannot change your own role.")
+
+    if member.role == "admin" and payload.role != "admin":
+        admin_count = (
+            db.query(WorkspaceMember)
+            .filter(WorkspaceMember.workspace_id == current_workspace_id, WorkspaceMember.role == "admin")
+            .count()
+        )
+        if admin_count <= 1:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Your workspace must keep at least one admin.",
+            )
+
+    member.role = payload.role
+    db.add(member)
+    _record_audit_event(
+        db,
+        workspace_id=current_workspace_id,
+        user_id=current_user.id,
+        action="member.role_updated",
+        resource_type="workspace_member",
+        resource_id=str(member.id),
+        details={"member_email": member.user.email if member.user else None, "role": payload.role},
+    )
+    db.commit()
+    db.refresh(member)
+
+    return _serialize_workspace_member(member)
+
+
+@router.delete("/members/{member_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_workspace_member(
+    member_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_workspace_id=Depends(get_current_workspace_id),
+):
+    _require_workspace_admin(db, current_user, current_workspace_id)
+
+    try:
+        member_lookup_id = UUID(str(member_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid workspace member id.") from exc
+
+    member = (
+        db.query(WorkspaceMember)
+        .filter(WorkspaceMember.id == member_lookup_id, WorkspaceMember.workspace_id == current_workspace_id)
+        .first()
+    )
+    if not member:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace member not found.")
+
+    if member.user_id == current_user.id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You cannot remove yourself from the workspace.")
+
+    if member.role == "admin":
+        admin_count = (
+            db.query(WorkspaceMember)
+            .filter(WorkspaceMember.workspace_id == current_workspace_id, WorkspaceMember.role == "admin")
+            .count()
+        )
+        if admin_count <= 1:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Your workspace must keep at least one admin.",
+            )
+
+    removed_email = member.user.email if member.user else None
+    _record_audit_event(
+        db,
+        workspace_id=current_workspace_id,
+        user_id=current_user.id,
+        action="member.removed",
+        resource_type="workspace_member",
+        resource_id=str(member.id),
+        details={"member_email": removed_email, "role": member.role},
+    )
+    db.delete(member)
+    db.commit()
 
 
 @router.post("/signup-company", response_model=CompanySignUpResponse, status_code=status.HTTP_201_CREATED)
@@ -484,6 +852,16 @@ def create_invite(
         expires_at=expires_at,
     )
     db.add(invite)
+    db.flush()
+    _record_audit_event(
+        db,
+        workspace_id=workspace.id,
+        user_id=inviter_user.id,
+        action="member.invited",
+        resource_type="workspace_invite",
+        resource_id=str(invite.id),
+        details={"invited_email": invited_email, "expires_at": expires_at.isoformat()},
+    )
     db.commit()
 
     return CreateInviteResponse(
@@ -551,6 +929,15 @@ def join_invite(payload: JoinInviteRequest, db: Session = Depends(get_db)):
     invite.accepted_at = now
     invite.accepted_by_user_id = app_user.id
     db.add(invite)
+    _record_audit_event(
+        db,
+        workspace_id=invite.workspace_id,
+        user_id=app_user.id,
+        action="member.joined",
+        resource_type="workspace_invite",
+        resource_id=str(invite.id),
+        details={"email": email},
+    )
     db.commit()
 
     workspace = db.query(Workspace).filter(Workspace.id == invite.workspace_id).first()

@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { getActiveSession, type BuilderProSession } from "@/lib/auth";
+import { formatDate } from "@/lib/format";
 import { authApi } from "@/services/api";
+import type { AuditLogEntry, WorkspaceMember, WorkspaceRole } from "@/types";
 
 function persistWorkspaceDetails(
   currentSession: BuilderProSession,
@@ -51,6 +53,11 @@ export default function SettingsPage() {
   const [copied, setCopied] = useState(false);
   const [isLoadingWorkspace, setIsLoadingWorkspace] = useState(false);
   const [isCreatingInvite, setIsCreatingInvite] = useState(false);
+  const [members, setMembers] = useState<WorkspaceMember[]>([]);
+  const [auditEvents, setAuditEvents] = useState<AuditLogEntry[]>([]);
+  const [isLoadingMembers, setIsLoadingMembers] = useState(false);
+  const [isLoadingAuditEvents, setIsLoadingAuditEvents] = useState(false);
+  const [memberActionId, setMemberActionId] = useState<string | null>(null);
 
   useEffect(() => {
     const activeSession = getActiveSession();
@@ -108,6 +115,50 @@ export default function SettingsPage() {
   }, [session, workspaceId, workspaceName]);
 
   const isAdmin = session?.role === "admin";
+
+  useEffect(() => {
+    if (!session?.accessToken || !isAdmin || !workspaceId) {
+      setMembers([]);
+      setAuditEvents([]);
+      return;
+    }
+
+    let active = true;
+
+    async function loadAdminData() {
+      setIsLoadingMembers(true);
+      setIsLoadingAuditEvents(true);
+
+      try {
+        const [nextMembers, nextEvents] = await Promise.all([
+          authApi.listMembers(),
+          authApi.listAuditEvents(),
+        ]);
+        if (!active) return;
+        setMembers(nextMembers);
+        setAuditEvents(nextEvents);
+      } catch (error) {
+        if (!active) return;
+        setErrorMessage(
+          error instanceof Error && error.message
+            ? error.message
+            : "Unable to load workspace admin details.",
+        );
+      } finally {
+        if (active) {
+          setIsLoadingMembers(false);
+          setIsLoadingAuditEvents(false);
+        }
+      }
+    }
+
+    void loadAdminData();
+
+    return () => {
+      active = false;
+    };
+  }, [session?.accessToken, isAdmin, workspaceId]);
+
   const canCreateInvite = useMemo(
     () =>
       Boolean(
@@ -152,6 +203,7 @@ export default function SettingsPage() {
       setInviteLink(inviteUrl);
       setInviteRecipient(invite.invited_email);
       setStatusMessage(`Invite prepared for ${invite.invited_email}. Your email app should open with the invite link ready to send.`);
+      setAuditEvents(await authApi.listAuditEvents());
 
       if (typeof window !== "undefined") {
         window.location.href = buildInviteEmailUrl(
@@ -168,6 +220,53 @@ export default function SettingsPage() {
       );
     } finally {
       setIsCreatingInvite(false);
+    }
+  };
+
+  const handleMemberRoleChange = async (memberId: string, nextRole: WorkspaceRole) => {
+    setErrorMessage("");
+    setStatusMessage("");
+    setMemberActionId(memberId);
+
+    try {
+      const updated = await authApi.updateMember(memberId, { role: nextRole });
+      setMembers((prev) => prev.map((member) => (member.id === updated.id ? updated : member)));
+      setAuditEvents(await authApi.listAuditEvents());
+      setStatusMessage(`${updated.email} is now a ${updated.role}.`);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error && error.message
+          ? error.message
+          : "Unable to update the workspace member role.",
+      );
+    } finally {
+      setMemberActionId(null);
+    }
+  };
+
+  const handleRemoveMember = async (member: WorkspaceMember) => {
+    if (typeof window !== "undefined") {
+      const confirmed = window.confirm(`Remove ${member.email} from ${workspaceName || "this workspace"}?`);
+      if (!confirmed) return;
+    }
+
+    setErrorMessage("");
+    setStatusMessage("");
+    setMemberActionId(member.id);
+
+    try {
+      await authApi.deleteMember(member.id);
+      setMembers((prev) => prev.filter((entry) => entry.id !== member.id));
+      setAuditEvents(await authApi.listAuditEvents());
+      setStatusMessage(`${member.email} was removed from the workspace.`);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error && error.message
+          ? error.message
+          : "Unable to remove the workspace member.",
+      );
+    } finally {
+      setMemberActionId(null);
     }
   };
 
@@ -367,6 +466,129 @@ export default function SettingsPage() {
             </div>
             After you send the email, the worker can open the invite link, complete the Join Workspace form, and they will be added under this admin and company workspace.
           </div>
+        </aside>
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+        <section className="card p-5 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Workspace members</h2>
+              <p className="text-sm text-gray-600 mt-1">
+                Review member roles and remove access when someone should no longer work in this workspace.
+              </p>
+            </div>
+            <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs font-semibold text-gray-700">
+              {members.length} member{members.length === 1 ? "" : "s"}
+            </span>
+          </div>
+
+        {isLoadingMembers ? (
+          <p className="text-sm text-gray-500">Loading workspace members...</p>
+        ) : members.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-4 text-sm text-gray-600">
+            No members are visible in this workspace yet.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {members.map((member) => {
+              const isCurrentUser = member.email === session.email;
+              const isBusy = memberActionId === member.id;
+
+              return (
+                <div key={member.id} className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-900">{member.full_name || member.email}</p>
+                      <p className="text-sm text-gray-600">{member.email}</p>
+                    </div>
+                    <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${member.role === "admin" ? "border border-orange-200 bg-orange-100 text-orange-700" : "border border-gray-200 bg-gray-100 text-gray-700"}`}>
+                      {member.role === "admin" ? "Admin" : "Member"}
+                      {isCurrentUser ? " • You" : ""}
+                    </span>
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap items-center gap-3">
+                    <label className="text-sm font-medium text-gray-800" htmlFor={`role-${member.id}`}>
+                      Role
+                    </label>
+                    <select
+                      id={`role-${member.id}`}
+                      value={member.role}
+                      disabled={isBusy || isCurrentUser}
+                      onChange={(event) => {
+                        void handleMemberRoleChange(member.id, event.target.value as WorkspaceRole);
+                      }}
+                      className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 bg-white outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-400 disabled:bg-gray-100"
+                    >
+                      <option value="admin">Admin</option>
+                      <option value="user">Member</option>
+                    </select>
+
+                    <button
+                      type="button"
+                      onClick={() => void handleRemoveMember(member)}
+                      disabled={isBusy || isCurrentUser}
+                      className="rounded-lg border border-red-300 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:border-red-200 disabled:text-red-300"
+                    >
+                      {isBusy ? "Working..." : "Remove access"}
+                    </button>
+                  </div>
+
+                  {isCurrentUser && (
+                    <p className="mt-2 text-xs text-gray-500">
+                      Your own role and access are locked here for safety.
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+        </section>
+
+        <aside className="card p-5 space-y-4">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">Recent activity</h2>
+            <p className="text-sm text-gray-600 mt-1">
+              Admin activity is now logged so workspace changes are easier to review.
+            </p>
+          </div>
+
+          {isLoadingAuditEvents ? (
+            <p className="text-sm text-gray-500">Loading activity...</p>
+          ) : auditEvents.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-4 text-sm text-gray-600">
+              No activity has been logged for this workspace yet.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {auditEvents.map((event) => (
+                <div key={event.id} className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-900">{event.action.replaceAll(".", " ")}</p>
+                      <p className="text-xs text-gray-500">
+                        {event.actor_email || "Unknown user"} • {formatDate(event.created_at)}
+                      </p>
+                    </div>
+                    <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700">
+                      {event.resource_type}
+                    </span>
+                  </div>
+                  {event.details && (
+                    <div className="mt-2 text-xs text-gray-600 space-y-1">
+                      {Object.entries(event.details).map(([key, value]) => (
+                        <p key={key}>
+                          <span className="font-medium text-gray-700">{key}:</span> {String(value)}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </aside>
       </div>
     </div>

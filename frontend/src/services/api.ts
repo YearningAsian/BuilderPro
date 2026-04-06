@@ -6,6 +6,7 @@
  */
 import { clearLocalAuthState, getActiveSession } from "@/lib/auth";
 import type {
+  AuditLogEntry,
   Material,
   MaterialCreate,
   Vendor,
@@ -16,6 +17,8 @@ import type {
   ProjectCreate,
   ProjectItem,
   ProjectItemCreate,
+  WorkspaceMember,
+  WorkspaceRole,
 } from "@/types";
 
 const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
@@ -26,10 +29,14 @@ const JSON_HEADERS: HeadersInit = {
 };
 
 export type SessionInfoResponse = {
-  role: "admin" | "user";
+  role: WorkspaceRole;
   email: string;
   workspace_id?: string | null;
   workspace_name?: string | null;
+};
+
+export type UpdateWorkspaceMemberPayload = {
+  role: WorkspaceRole;
 };
 
 export type CreateInvitePayload = {
@@ -84,10 +91,15 @@ function handleExpiredSession(message: string) {
 }
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
+  const session = getActiveSession();
+  const authHeaders: HeadersInit = session?.accessToken
+    ? { Authorization: `Bearer ${session.accessToken}` }
+    : {};
+
   const res = await fetch(url, {
     ...init,
     credentials: "include",
-    headers: { ...JSON_HEADERS, ...init?.headers },
+    headers: { ...JSON_HEADERS, ...authHeaders, ...init?.headers },
   });
 
   const bodyText = await res.text().catch(() => "");
@@ -142,6 +154,11 @@ function normalizeMaterial(material: Material): Material {
 function normalizeProjectItem(item: ProjectItem): ProjectItem {
   return {
     ...item,
+    order_status: item.order_status ?? "draft",
+    po_number: item.po_number ?? null,
+    purchase_notes: item.purchase_notes ?? null,
+    ordered_at: item.ordered_at ?? null,
+    received_at: item.received_at ?? null,
     quantity: toNumber(item.quantity),
     unit_cost: toNumber(item.unit_cost),
     waste_pct: toNumber(item.waste_pct),
@@ -196,7 +213,7 @@ export const projectItemsApi = {
   update: async (
     _projectId: string,
     itemId: string,
-    data: Partial<Pick<ProjectItem, "quantity" | "unit_cost" | "waste_pct" | "notes">>
+    data: Partial<Pick<ProjectItem, "quantity" | "unit_cost" | "waste_pct" | "order_status" | "po_number" | "purchase_notes" | "notes">>
   ) =>
     normalizeProjectItem(
       await request<ProjectItem>(`${BASE}/orders/${itemId}`, {
@@ -232,6 +249,19 @@ export const customersApi = {
 
 export const authApi = {
   me: () => request<SessionInfoResponse>(`${BASE}/auth/me`, { headers: getAuthHeaders() }),
+  listAuditEvents: () => request<AuditLogEntry[]>(`${BASE}/auth/audit-log`, { headers: getAuthHeaders() }),
+  listMembers: () => request<WorkspaceMember[]>(`${BASE}/auth/members`, { headers: getAuthHeaders() }),
+  updateMember: (memberId: string, data: UpdateWorkspaceMemberPayload) =>
+    request<WorkspaceMember>(`${BASE}/auth/members/${encodeURIComponent(memberId)}`, {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data),
+    }),
+  deleteMember: (memberId: string) =>
+    request<void>(`${BASE}/auth/members/${encodeURIComponent(memberId)}`, {
+      method: "DELETE",
+      headers: getAuthHeaders(),
+    }),
   createInvite: (data: CreateInvitePayload) =>
     request<CreateInviteResponse>(`${BASE}/auth/invites`, {
       method: "POST",
