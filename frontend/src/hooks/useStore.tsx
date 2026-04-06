@@ -16,6 +16,7 @@ import React, {
 } from "react";
 import type {
   Material,
+  MaterialCreate,
   Vendor,
   Customer,
   Project,
@@ -60,6 +61,9 @@ interface StoreValue {
   ) => Promise<void>;
 
   createProject: (name: string, customerId: string) => Promise<Project | null>;
+  createMaterial: (data: MaterialCreate) => Promise<Material>;
+  updateMaterial: (id: string, data: Partial<MaterialCreate>) => Promise<Material>;
+  deleteMaterial: (id: string) => Promise<void>;
 
   getMaterialById: (id: string) => Material | undefined;
   getVendorById: (id: string) => Vendor | undefined;
@@ -258,6 +262,23 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
+  const createMaterial = useCallback(async (data: MaterialCreate) => {
+    const created = await materialsApi.create(data);
+    setMaterials((prev) => [...prev, created]);
+    return created;
+  }, []);
+
+  const updateMaterial = useCallback(async (id: string, data: Partial<MaterialCreate>) => {
+    const updated = await materialsApi.update(id, data);
+    setMaterials((prev) => prev.map((material) => (material.id === id ? updated : material)));
+    return updated;
+  }, []);
+
+  const deleteMaterial = useCallback(async (id: string) => {
+    await materialsApi.delete(id);
+    setMaterials((prev) => prev.filter((material) => material.id !== id));
+  }, []);
+
   const value = useMemo<StoreValue>(
     () => ({
       materials,
@@ -270,6 +291,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       removeItemFromProject,
       updateProjectItem,
       createProject,
+      createMaterial,
+      updateMaterial,
+      deleteMaterial,
       getMaterialById,
       getVendorById,
       getCustomerById,
@@ -286,6 +310,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       removeItemFromProject,
       updateProjectItem,
       createProject,
+      createMaterial,
+      updateMaterial,
+      deleteMaterial,
       getMaterialById,
       getVendorById,
       getCustomerById,

@@ -1,18 +1,61 @@
 "use client";
 
-import { useMemo, useState, useCallback } from "react";
-import { useStore } from "@/hooks/useStore";
-import { useDebounce } from "@/hooks/useDebounce";
-import { formatCurrency, formatPercent } from "@/lib/format";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { MATERIAL_CATEGORIES } from "@/data/seed";
-import type { Material, SortConfig } from "@/types";
+import { useDebounce } from "@/hooks/useDebounce";
+import { useStore } from "@/hooks/useStore";
+import { getActiveSession } from "@/lib/auth";
+import { formatCurrency, formatPercent } from "@/lib/format";
+import type { Material, MaterialCreate, SortConfig } from "@/types";
+import { materialCreateSchema } from "@/types/schemas";
 
 type MaterialSortKey = "name" | "category" | "unit_type" | "unit_cost" | "sku";
 
-/**
- * Sortable column header.
- * Shows a directional arrow when this column is the active sort key.
- */
+type MaterialFormState = {
+  name: string;
+  category: string;
+  unit_type: string;
+  unit_cost: string;
+  sku: string;
+  default_vendor_id: string;
+  size_dims: string;
+  notes: string;
+  is_taxable: boolean;
+  default_waste_pct: string;
+};
+
+const UNIT_TYPE_OPTIONS = ["each", "ft", "sqft", "cuyd", "lb", "box", "sheet", "roll"];
+
+const EMPTY_FORM: MaterialFormState = {
+  name: "",
+  category: "",
+  unit_type: "each",
+  unit_cost: "0",
+  sku: "",
+  default_vendor_id: "",
+  size_dims: "",
+  notes: "",
+  is_taxable: true,
+  default_waste_pct: "0",
+};
+
+function toFormState(material?: Material | null): MaterialFormState {
+  if (!material) return EMPTY_FORM;
+
+  return {
+    name: material.name,
+    category: material.category ?? "",
+    unit_type: material.unit_type,
+    unit_cost: String(material.unit_cost),
+    sku: material.sku ?? "",
+    default_vendor_id: material.default_vendor_id ?? "",
+    size_dims: material.size_dims ?? "",
+    notes: material.notes ?? "",
+    is_taxable: material.is_taxable,
+    default_waste_pct: String(material.default_waste_pct),
+  };
+}
+
 function SortHeader({
   label,
   sortKey,
@@ -26,6 +69,7 @@ function SortHeader({
 }) {
   const arrow =
     active?.key === sortKey ? (active.direction === "asc" ? " ▲" : " ▼") : "";
+
   return (
     <th
       className="cursor-pointer select-none hover:text-gray-700 transition-colors"
@@ -37,101 +81,256 @@ function SortHeader({
   );
 }
 
-/**
- * Materials catalog with:
- * - debounced search (name / SKU / vendor)
- * - category filter chips
- * - sortable columns (name, category, unit cost, etc.)
- */
 export function MaterialsList() {
-  const { materials, vendors, getVendorById } = useStore();
+  const {
+    materials,
+    vendors,
+    getVendorById,
+    createMaterial,
+    updateMaterial,
+    deleteMaterial,
+  } = useStore();
 
-  // ── Search & filter state ──
+  const [sessionRole, setSessionRole] = useState<"admin" | "user" | null>(null);
   const [query, setQuery] = useState("");
-  const debouncedQuery = useDebounce(query, 250);
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
-
-  // ── Sort state ──
+  const [vendorFilter, setVendorFilter] = useState("");
   const [sort, setSort] = useState<SortConfig<MaterialSortKey> | null>(null);
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const [editingMaterialId, setEditingMaterialId] = useState<string | null>(null);
+  const [form, setForm] = useState<MaterialFormState>(EMPTY_FORM);
+  const [formError, setFormError] = useState("");
+  const [formStatus, setFormStatus] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
 
-  const toggleSort = useCallback(
-    (key: MaterialSortKey) => {
-      setSort((prev) => {
-        if (prev?.key === key) {
-          return prev.direction === "asc"
-            ? { key, direction: "desc" }
-            : null; // third click clears
-        }
-        return { key, direction: "asc" };
-      });
-    },
-    [],
-  );
+  const debouncedQuery = useDebounce(query, 250);
+  const isAdmin = sessionRole === "admin";
 
-  /** Filtered + sorted material list. */
+  useEffect(() => {
+    setSessionRole(getActiveSession()?.role ?? null);
+  }, []);
+
+  const toggleSort = useCallback((key: MaterialSortKey) => {
+    setSort((prev) => {
+      if (prev?.key === key) {
+        return prev.direction === "asc" ? { key, direction: "desc" } : null;
+      }
+      return { key, direction: "asc" };
+    });
+  }, []);
+
   const filtered = useMemo(() => {
     const q = debouncedQuery.toLowerCase();
-    let list = materials.filter((m) => {
+
+    let list = materials.filter((material) => {
+      const vendorName = material.default_vendor_id
+        ? getVendorById(material.default_vendor_id)?.name ?? ""
+        : "";
+
       const matchesQuery =
         !q ||
-        m.name.toLowerCase().includes(q) ||
-        (m.sku && m.sku.toLowerCase().includes(q)) ||
-        (m.category && m.category.toLowerCase().includes(q));
-      const matchesCat = !categoryFilter || m.category === categoryFilter;
-      return matchesQuery && matchesCat;
+        material.name.toLowerCase().includes(q) ||
+        (material.sku && material.sku.toLowerCase().includes(q)) ||
+        (material.category && material.category.toLowerCase().includes(q)) ||
+        vendorName.toLowerCase().includes(q);
+
+      const matchesCategory = !categoryFilter || material.category === categoryFilter;
+      const matchesVendor = !vendorFilter || material.default_vendor_id === vendorFilter;
+
+      return matchesQuery && matchesCategory && matchesVendor;
     });
 
     if (sort) {
       list = [...list].sort((a, b) => {
         const av = a[sort.key] ?? "";
         const bv = b[sort.key] ?? "";
-        const cmp = typeof av === "number" && typeof bv === "number"
-          ? av - bv
-          : String(av).localeCompare(String(bv));
+        const cmp =
+          typeof av === "number" && typeof bv === "number"
+            ? av - bv
+            : String(av).localeCompare(String(bv));
         return sort.direction === "asc" ? cmp : -cmp;
       });
     }
 
     return list;
-  }, [materials, debouncedQuery, categoryFilter, sort]);
+  }, [materials, debouncedQuery, categoryFilter, vendorFilter, sort, getVendorById]);
+
+  const averageUnitCost = useMemo(() => {
+    if (materials.length === 0) return 0;
+    return materials.reduce((sum, material) => sum + material.unit_cost, 0) / materials.length;
+  }, [materials]);
+
+  const categoriesInUse = useMemo(() => {
+    return new Set(materials.map((material) => material.category).filter(Boolean)).size;
+  }, [materials]);
+
+  const openCreateForm = () => {
+    setEditingMaterialId(null);
+    setForm(EMPTY_FORM);
+    setFormError("");
+    setFormStatus("");
+    setIsEditorOpen(true);
+  };
+
+  const openEditForm = (material: Material) => {
+    setEditingMaterialId(material.id);
+    setForm(toFormState(material));
+    setFormError("");
+    setFormStatus("");
+    setIsEditorOpen(true);
+  };
+
+  const closeEditor = () => {
+    setEditingMaterialId(null);
+    setForm(EMPTY_FORM);
+    setFormError("");
+    setIsEditorOpen(false);
+  };
+
+  const handleFieldChange = <K extends keyof MaterialFormState>(key: K, value: MaterialFormState[K]) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setFormError("");
+    setFormStatus("");
+
+    const candidate: MaterialCreate = {
+      name: form.name.trim(),
+      category: form.category.trim() || null,
+      unit_type: form.unit_type.trim(),
+      unit_cost: Number(form.unit_cost),
+      sku: form.sku.trim() || null,
+      default_vendor_id: form.default_vendor_id || null,
+      size_dims: form.size_dims.trim() || null,
+      notes: form.notes.trim() || null,
+      is_taxable: form.is_taxable,
+      default_waste_pct: Number(form.default_waste_pct),
+    };
+
+    const validated = materialCreateSchema.safeParse(candidate);
+    if (!validated.success) {
+      setFormError(validated.error.issues[0]?.message ?? "Please correct the material details.");
+      return;
+    }
+
+    setIsSaving(true);
+
+    try {
+      if (editingMaterialId) {
+        await updateMaterial(editingMaterialId, validated.data);
+        setFormStatus("Material updated successfully.");
+      } else {
+        await createMaterial(validated.data);
+        setFormStatus("Material created successfully.");
+        setForm(EMPTY_FORM);
+      }
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "Unable to save material.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDelete = async (material: Material) => {
+    const confirmed = window.confirm(
+      `Delete ${material.name}? This only works if the material is not already used in a project.`
+    );
+    if (!confirmed) return;
+
+    setFormError("");
+    setFormStatus("");
+
+    try {
+      await deleteMaterial(material.id);
+      setFormStatus(`${material.name} was removed from the catalog.`);
+      if (editingMaterialId === material.id) {
+        closeEditor();
+      }
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "Unable to delete material.");
+    }
+  };
 
   return (
     <div className="p-6 lg:p-8 space-y-6 animate-fade-in">
-      {/* Page header */}
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Materials Catalog</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          {materials.length} materials from {vendors.length} vendors
-        </p>
-      </div>
-
-      {/* Search + filter bar */}
-      <div className="card p-4 flex flex-col md:flex-row gap-4">
-        {/* Search input */}
-        <div className="relative flex-1">
-          <svg
-            className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth={2}
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M21 21l-4.35-4.35m0 0A7.5 7.5 0 1110.65 4.65a7.5 7.5 0 016 12"
-            />
-          </svg>
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search by name, SKU, or category…"
-            className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-orange-400"
-          />
+      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Materials Catalog</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            Maintain your reusable pricebook for estimates, vendors, and job costing.
+          </p>
         </div>
 
-        {/* Category chips */}
+        {isAdmin && (
+          <button
+            type="button"
+            onClick={openCreateForm}
+            className="rounded-lg bg-orange-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-orange-600"
+          >
+            Add material
+          </button>
+        )}
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <div className="card p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Catalog size</p>
+          <p className="mt-2 text-2xl font-bold text-gray-900">{materials.length}</p>
+          <p className="text-sm text-gray-500">Active materials in the pricebook</p>
+        </div>
+        <div className="card p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Categories</p>
+          <p className="mt-2 text-2xl font-bold text-gray-900">{categoriesInUse}</p>
+          <p className="text-sm text-gray-500">Material groups currently in use</p>
+        </div>
+        <div className="card p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Average unit cost</p>
+          <p className="mt-2 text-2xl font-bold text-gray-900">{formatCurrency(averageUnitCost)}</p>
+          <p className="text-sm text-gray-500">Quick cost pulse across the catalog</p>
+        </div>
+      </div>
+
+      <div className="card p-4 flex flex-col gap-4">
+        <div className="flex flex-col gap-4 lg:flex-row">
+          <div className="relative flex-1">
+            <svg
+              className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M21 21l-4.35-4.35m0 0A7.5 7.5 0 1110.65 4.65a7.5 7.5 0 016 12"
+              />
+            </svg>
+            <input
+              type="text"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search by name, SKU, category, or vendor…"
+              className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-orange-400"
+            />
+          </div>
+
+          <select
+            value={vendorFilter}
+            onChange={(event) => setVendorFilter(event.target.value)}
+            className="rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-orange-400"
+          >
+            <option value="">All vendors</option>
+            {vendors.map((vendor) => (
+              <option key={vendor.id} value={vendor.id}>
+                {vendor.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
         <div className="flex flex-wrap gap-2 items-center">
           <button
             onClick={() => setCategoryFilter(null)}
@@ -143,28 +342,205 @@ export function MaterialsList() {
           >
             All
           </button>
-          {MATERIAL_CATEGORIES.map((cat) => (
+          {MATERIAL_CATEGORIES.map((category) => (
             <button
-              key={cat}
-              onClick={() => setCategoryFilter(cat === categoryFilter ? null : cat)}
+              key={category}
+              onClick={() => setCategoryFilter(category === categoryFilter ? null : category)}
               className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
-                categoryFilter === cat
+                categoryFilter === category
                   ? "bg-orange-500 text-white border-orange-500"
                   : "bg-white text-gray-600 border-gray-200 hover:border-orange-300"
               }`}
             >
-              {cat}
+              {category}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Results count */}
+      {(formError || formStatus) && (
+        <div className="space-y-2">
+          {formError && (
+            <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {formError}
+            </p>
+          )}
+          {formStatus && (
+            <p className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
+              {formStatus}
+            </p>
+          )}
+        </div>
+      )}
+
+      {isAdmin && isEditorOpen && (
+        <section className="card p-5 space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">
+                {editingMaterialId ? "Edit material" : "Create material"}
+              </h2>
+              <p className="text-sm text-gray-600">
+                Set pricing defaults and vendor information for your estimating catalog.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={closeEditor}
+              className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+            >
+              Close
+            </button>
+          </div>
+
+          <form className="grid gap-4 md:grid-cols-2" onSubmit={handleSubmit}>
+            <div>
+              <label className="block text-sm font-medium text-gray-800 mb-1">Name</label>
+              <input
+                value={form.name}
+                onChange={(event) => handleFieldChange("name", event.target.value)}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm text-gray-900"
+                placeholder="2x4 kiln-dried stud"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-800 mb-1">Category</label>
+              <select
+                value={form.category}
+                onChange={(event) => handleFieldChange("category", event.target.value)}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm text-gray-900"
+              >
+                <option value="">Select category</option>
+                {MATERIAL_CATEGORIES.map((category) => (
+                  <option key={category} value={category}>
+                    {category}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-800 mb-1">Unit type</label>
+              <select
+                value={form.unit_type}
+                onChange={(event) => handleFieldChange("unit_type", event.target.value)}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm text-gray-900"
+              >
+                {UNIT_TYPE_OPTIONS.map((unit) => (
+                  <option key={unit} value={unit}>
+                    {unit}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-800 mb-1">Unit cost</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={form.unit_cost}
+                onChange={(event) => handleFieldChange("unit_cost", event.target.value)}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm text-gray-900"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-800 mb-1">SKU</label>
+              <input
+                value={form.sku}
+                onChange={(event) => handleFieldChange("sku", event.target.value)}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm text-gray-900"
+                placeholder="LMB-2X4-8"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-800 mb-1">Preferred vendor</label>
+              <select
+                value={form.default_vendor_id}
+                onChange={(event) => handleFieldChange("default_vendor_id", event.target.value)}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm text-gray-900"
+              >
+                <option value="">No default vendor</option>
+                {vendors.map((vendor) => (
+                  <option key={vendor.id} value={vendor.id}>
+                    {vendor.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-800 mb-1">Size / dimensions</label>
+              <input
+                value={form.size_dims}
+                onChange={(event) => handleFieldChange("size_dims", event.target.value)}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm text-gray-900"
+                placeholder="8 ft x 2 in x 4 in"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-800 mb-1">Default waste %</label>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="0.01"
+                value={form.default_waste_pct}
+                onChange={(event) => handleFieldChange("default_waste_pct", event.target.value)}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm text-gray-900"
+              />
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-800 mb-1">Notes</label>
+              <textarea
+                value={form.notes}
+                onChange={(event) => handleFieldChange("notes", event.target.value)}
+                rows={3}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm text-gray-900"
+                placeholder="Specs, alternates, ordering notes, or color details"
+              />
+            </div>
+
+            <label className="inline-flex items-center gap-2 text-sm text-gray-700 md:col-span-2">
+              <input
+                type="checkbox"
+                checked={form.is_taxable}
+                onChange={(event) => handleFieldChange("is_taxable", event.target.checked)}
+                className="rounded border-gray-300 text-orange-500 focus:ring-orange-300"
+              />
+              Taxable item
+            </label>
+
+            <div className="md:col-span-2 flex flex-wrap gap-3">
+              <button
+                type="submit"
+                disabled={isSaving}
+                className="rounded-lg bg-orange-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-orange-600 disabled:bg-orange-300"
+              >
+                {isSaving ? "Saving..." : editingMaterialId ? "Save changes" : "Create material"}
+              </button>
+              <button
+                type="button"
+                onClick={closeEditor}
+                className="rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </section>
+      )}
+
       <p className="text-xs text-gray-400">
         Showing {filtered.length} of {materials.length} materials
       </p>
 
-      {/* Table */}
       <div className="card overflow-x-auto">
         <table className="bp-table">
           <thead>
@@ -177,40 +553,62 @@ export function MaterialsList() {
               <th>Vendor</th>
               <th>Waste %</th>
               <th>Taxable</th>
+              {isAdmin && <th>Actions</th>}
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={8} className="text-center py-10 text-gray-400">
+                <td colSpan={isAdmin ? 9 : 8} className="text-center py-10 text-gray-400">
                   No materials match your filters.
                 </td>
               </tr>
             ) : (
-              filtered.map((m) => {
-                const vendor = m.default_vendor_id
-                  ? getVendorById(m.default_vendor_id)
+              filtered.map((material) => {
+                const vendor = material.default_vendor_id
+                  ? getVendorById(material.default_vendor_id)
                   : null;
+
                 return (
-                  <tr key={m.id}>
-                    <td className="font-medium text-gray-900">{m.name}</td>
+                  <tr key={material.id}>
+                    <td className="font-medium text-gray-900">{material.name}</td>
                     <td>
                       <span className="inline-block px-2 py-0.5 text-xs font-medium rounded bg-gray-100 text-gray-600">
-                        {m.category ?? "—"}
+                        {material.category ?? "—"}
                       </span>
                     </td>
-                    <td>{m.unit_type}</td>
-                    <td className="font-mono">{formatCurrency(m.unit_cost)}</td>
-                    <td className="font-mono text-gray-500">{m.sku ?? "—"}</td>
+                    <td>{material.unit_type}</td>
+                    <td className="font-mono">{formatCurrency(material.unit_cost)}</td>
+                    <td className="font-mono text-gray-500">{material.sku ?? "—"}</td>
                     <td className="text-gray-600">{vendor?.name ?? "—"}</td>
-                    <td>{formatPercent(m.default_waste_pct)}</td>
+                    <td>{formatPercent(material.default_waste_pct)}</td>
                     <td>
-                      {m.is_taxable ? (
+                      {material.is_taxable ? (
                         <span className="text-green-600 text-xs font-semibold">Yes</span>
                       ) : (
                         <span className="text-gray-400 text-xs">No</span>
                       )}
                     </td>
+                    {isAdmin && (
+                      <td>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => openEditForm(material)}
+                            className="rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(material)}
+                            className="rounded-md border border-red-200 px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 );
               })

@@ -29,6 +29,15 @@ function persistWorkspaceDetails(
   }
 }
 
+function buildInviteEmailUrl(recipientEmail: string, workspaceName: string, inviteLink: string) {
+  const subject = encodeURIComponent(`You're invited to join ${workspaceName}`);
+  const body = encodeURIComponent(
+    `Hi,\n\nYou've been invited to join ${workspaceName} in Builder Pro.\n\nOpen the link below, then complete the Join Workspace form:\n${inviteLink}\n\nIf the page asks for an invite token, you can paste the full link or use the token from the URL.\n`
+  );
+
+  return `mailto:${encodeURIComponent(recipientEmail)}?subject=${subject}&body=${body}`;
+}
+
 export default function SettingsPage() {
   const [session, setSession] = useState<BuilderProSession | null>(null);
   const [workspaceId, setWorkspaceId] = useState("");
@@ -36,6 +45,7 @@ export default function SettingsPage() {
   const [inviteEmail, setInviteEmail] = useState("");
   const [expiresInDays, setExpiresInDays] = useState(7);
   const [inviteLink, setInviteLink] = useState("");
+  const [inviteRecipient, setInviteRecipient] = useState("");
   const [statusMessage, setStatusMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [copied, setCopied] = useState(false);
@@ -100,8 +110,14 @@ export default function SettingsPage() {
   const isAdmin = session?.role === "admin";
   const canCreateInvite = useMemo(
     () =>
-      Boolean(isAdmin && workspaceId && inviteEmail.trim().length > 0 && !isCreatingInvite),
-    [isAdmin, workspaceId, inviteEmail, isCreatingInvite],
+      Boolean(
+        isAdmin &&
+          workspaceId.trim().length > 0 &&
+          inviteEmail.trim().length > 0 &&
+          !isCreatingInvite &&
+          !isLoadingWorkspace,
+      ),
+    [isAdmin, workspaceId, inviteEmail, isCreatingInvite, isLoadingWorkspace],
   );
 
   const handleCreateInvite = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -117,7 +133,9 @@ export default function SettingsPage() {
     }
 
     if (!workspaceId) {
-      setErrorMessage("Workspace info is still loading. Please try again in a moment.");
+      setErrorMessage(
+        "Workspace details are not available for this account yet. Refresh the page or sign in again as your workspace admin."
+      );
       return;
     }
 
@@ -132,7 +150,16 @@ export default function SettingsPage() {
 
       const inviteUrl = `${window.location.origin}/join-invite?token=${encodeURIComponent(invite.invite_token)}&email=${encodeURIComponent(invite.invited_email)}`;
       setInviteLink(inviteUrl);
-      setStatusMessage(`Invite link ready for ${invite.invited_email}.`);
+      setInviteRecipient(invite.invited_email);
+      setStatusMessage(`Invite prepared for ${invite.invited_email}. Your email app should open with the invite link ready to send.`);
+
+      if (typeof window !== "undefined") {
+        window.location.href = buildInviteEmailUrl(
+          invite.invited_email,
+          workspaceName || "your Builder Pro workspace",
+          inviteUrl,
+        );
+      }
     } catch (error) {
       setErrorMessage(
         error instanceof Error && error.message
@@ -198,7 +225,7 @@ export default function SettingsPage() {
           <div>
             <h2 className="text-lg font-semibold text-gray-900">Invite a worker</h2>
             <p className="text-sm text-gray-600 mt-1">
-              Generate a link and send it to the worker by text, email, or chat.
+              Generate the invite and open an email draft so you can send the link directly to the worker.
             </p>
           </div>
 
@@ -252,13 +279,17 @@ export default function SettingsPage() {
               disabled={!canCreateInvite}
               className="rounded-lg bg-orange-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-orange-600 disabled:bg-orange-300 disabled:cursor-not-allowed"
             >
-              {isCreatingInvite ? "Creating invite..." : "Create join link"}
+              {isCreatingInvite
+                ? "Creating invite..."
+                : isLoadingWorkspace && !workspaceId
+                  ? "Loading workspace..."
+                  : "Create & email invite"}
             </button>
           </form>
 
           {inviteLink && (
             <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-3">
-              <p className="text-sm font-medium text-gray-800">Share this join link</p>
+              <p className="text-sm font-medium text-gray-800">Invite email and join link</p>
               <textarea
                 readOnly
                 value={inviteLink}
@@ -266,6 +297,16 @@ export default function SettingsPage() {
                 className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700"
               />
               <div className="flex flex-wrap gap-3">
+                <Link
+                  href={buildInviteEmailUrl(
+                    inviteRecipient || inviteEmail.trim().toLowerCase(),
+                    workspaceName || "your Builder Pro workspace",
+                    inviteLink,
+                  )}
+                  className="rounded-lg border border-blue-300 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50"
+                >
+                  Email invite
+                </Link>
                 <button
                   type="button"
                   onClick={handleCopy}
@@ -288,17 +329,43 @@ export default function SettingsPage() {
         <aside className="card p-5 space-y-3">
           <h2 className="text-lg font-semibold text-gray-900">Workspace</h2>
           <div className="text-sm text-gray-600 space-y-2">
-            <p><span className="font-medium text-gray-800">Admin:</span> {session.email}</p>
-            <p><span className="font-medium text-gray-800">Workspace:</span> {workspaceName || "Loading..."}</p>
-            <p><span className="font-medium text-gray-800">Workspace ID:</span> {workspaceId || "Loading..."}</p>
+            <p className="flex flex-wrap items-center gap-2">
+              <span className="font-medium text-gray-800">Admin:</span>
+              <span>{session.email}</span>
+              <span className="inline-flex items-center rounded-full border border-orange-200 bg-orange-100 px-2 py-0.5 text-[11px] font-semibold text-orange-700">
+                Workspace Admin
+              </span>
+            </p>
+            <p>
+              <span className="font-medium text-gray-800">Workspace:</span>{" "}
+              {workspaceName || (isLoadingWorkspace ? "Loading..." : "Not available")}
+            </p>
+            <p>
+              <span className="font-medium text-gray-800">Workspace ID:</span>{" "}
+              {workspaceId || (isLoadingWorkspace ? "Loading..." : "Not available")}
+            </p>
           </div>
 
           {isLoadingWorkspace && (
             <p className="text-sm text-gray-500">Refreshing workspace details...</p>
           )}
 
+          {!isLoadingWorkspace && !workspaceId && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+              No workspace is linked to this account yet, so invite links cannot be generated until that is fixed.
+            </div>
+          )}
+
           <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
-            After you send the link, the worker can open it, set a password, and join your company workspace.
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center rounded-full border border-blue-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-blue-700">
+                Invited Worker
+              </span>
+              <span className="inline-flex items-center rounded-full border border-orange-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-orange-700">
+                Workspace Admin
+              </span>
+            </div>
+            After you send the email, the worker can open the invite link, complete the Join Workspace form, and they will be added under this admin and company workspace.
           </div>
         </aside>
       </div>

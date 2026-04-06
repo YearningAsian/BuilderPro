@@ -169,7 +169,24 @@ def _get_or_create_user(db: Session, email: str, full_name: str | None, role: st
     return user
 
 
-def _membership_role_for_signin(db: Session, user: User) -> tuple[str, WorkspaceMember | None]:
+def _build_workspace_name_for_user(db: Session, user: User) -> str:
+    base_name = (user.full_name or user.email.split("@", 1)[0]).strip()
+    if not base_name:
+        base_name = "BuilderPro"
+    if "workspace" not in base_name.lower():
+        base_name = f"{base_name} Workspace"
+
+    candidate = base_name
+    suffix = 2
+
+    while db.query(Workspace).filter(func.lower(Workspace.name) == candidate.lower()).first():
+        candidate = f"{base_name} {suffix}"
+        suffix += 1
+
+    return candidate
+
+
+def _membership_role_for_session(db: Session, user: User) -> tuple[str, WorkspaceMember | None, bool]:
     membership = (
         db.query(WorkspaceMember)
         .filter(WorkspaceMember.user_id == user.id)
@@ -178,8 +195,75 @@ def _membership_role_for_signin(db: Session, user: User) -> tuple[str, Workspace
     )
 
     if membership:
-        return membership.role, membership
-    return (user.role if user.role in {"admin", "user"} else "user"), None
+        return membership.role, membership, False
+
+    fallback_role = user.role if user.role in {"admin", "user"} else "user"
+    if fallback_role != "admin":
+        return fallback_role, None, False
+
+    workspace = (
+        db.query(Workspace)
+        .filter(Workspace.created_by == user.id)
+        .order_by(Workspace.created_at.asc())
+        .first()
+    )
+
+    if not workspace:
+        workspace = Workspace(name=_build_workspace_name_for_user(db, user), created_by=user.id)
+        db.add(workspace)
+        db.flush()
+
+    membership = WorkspaceMember(workspace_id=workspace.id, user_id=user.id, role="admin")
+    db.add(membership)
+    db.flush()
+
+    return "admin", membership, True
+
+
+def _register_supabase_user_with_session(email: str, password: str, full_name: str) -> tuple[str | None, str, bool]:
+    token_type = "bearer"
+
+    try:
+        _supabase_request(
+            "POST",
+            "/auth/v1/admin/users",
+            payload={
+                "email": email,
+                "password": password,
+                "email_confirm": True,
+                "user_metadata": {"full_name": full_name},
+            },
+        )
+    except HTTPException as exc:
+        if exc.status_code not in {401, 403, 404}:
+            raise
+
+        _supabase_request(
+            "POST",
+            "/auth/v1/signup",
+            payload={
+                "email": email,
+                "password": password,
+                "options": {"data": {"full_name": full_name}},
+            },
+        )
+
+    try:
+        auth = _supabase_request(
+            "POST",
+            "/auth/v1/token?grant_type=password",
+            payload={"email": email, "password": password},
+        )
+    except HTTPException as exc:
+        if exc.status_code in {400, 401} and "confirm" in str(exc.detail).lower():
+            return None, token_type, True
+        raise
+
+    access_token = auth.get("access_token")
+    token_type = auth.get("token_type", "bearer")
+    requires_email_confirmation = not bool(access_token)
+
+    return access_token, token_type, requires_email_confirmation
 
 
 def _extract_bearer_token(authorization: str | None) -> str:
@@ -235,7 +319,10 @@ def sign_in(payload: SignInRequest, db: Session = Depends(get_db)):
         user = _get_or_create_user(db, email=email, full_name=None, role="user")
         db.commit()
 
-    role, membership = _membership_role_for_signin(db, user)
+    role, membership, session_repaired = _membership_role_for_session(db, user)
+    if session_repaired:
+        db.commit()
+
     workspace_name = None
     workspace_id = None
 
@@ -289,7 +376,10 @@ def get_session_info(
         user = _get_or_create_user(db, email=email, full_name=None, role="user")
         db.commit()
 
-    role, membership = _membership_role_for_signin(db, user)
+    role, membership, session_repaired = _membership_role_for_session(db, user)
+    if session_repaired:
+        db.commit()
+
     workspace_name = None
     workspace_id = None
 
@@ -327,10 +417,11 @@ def sign_up_company(payload: CompanySignUpRequest, db: Session = Depends(get_db)
     if existing_workspace:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="A workspace with this company name already exists.")
 
-    auth = _supabase_request("POST", "/auth/v1/signup", payload={"email": email, "password": password})
-    access_token = auth.get("access_token")
-    token_type = auth.get("token_type", "bearer")
-    user_payload = auth.get("user") or {}
+    access_token, token_type, requires_email_confirmation = _register_supabase_user_with_session(
+        email=email,
+        password=password,
+        full_name=full_name,
+    )
 
     app_user = _get_or_create_user(db, email=email, full_name=full_name, role="admin")
 
@@ -341,8 +432,6 @@ def sign_up_company(payload: CompanySignUpRequest, db: Session = Depends(get_db)
     membership = WorkspaceMember(workspace_id=workspace.id, user_id=app_user.id, role="admin")
     db.add(membership)
     db.commit()
-
-    requires_email_confirmation = not bool(access_token) and bool(user_payload)
 
     return CompanySignUpResponse(
         access_token=access_token,
@@ -437,10 +526,11 @@ def join_invite(payload: JoinInviteRequest, db: Session = Depends(get_db)):
     if _normalize_email(invite.invited_email) != email:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invite email does not match.")
 
-    auth = _supabase_request("POST", "/auth/v1/signup", payload={"email": email, "password": payload.password})
-    access_token = auth.get("access_token")
-    token_type = auth.get("token_type", "bearer")
-    user_payload = auth.get("user") or {}
+    access_token, token_type, requires_email_confirmation = _register_supabase_user_with_session(
+        email=email,
+        password=payload.password,
+        full_name=full_name,
+    )
 
     app_user = _get_or_create_user(db, email=email, full_name=full_name, role="user")
 
@@ -464,8 +554,6 @@ def join_invite(payload: JoinInviteRequest, db: Session = Depends(get_db)):
     db.commit()
 
     workspace = db.query(Workspace).filter(Workspace.id == invite.workspace_id).first()
-
-    requires_email_confirmation = not bool(access_token) and bool(user_payload)
 
     return JoinInviteResponse(
         access_token=access_token,

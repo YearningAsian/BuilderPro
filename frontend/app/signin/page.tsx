@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, Suspense, useEffect, useMemo, useState } from "react";
 
 type FormErrors = {
   email?: string;
@@ -84,7 +84,7 @@ async function signInRequest(email: string, password: string): Promise<AuthRespo
   };
 }
 
-export default function SignInPage() {
+function SignInPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
@@ -340,5 +340,19 @@ export default function SignInPage() {
         </div>
       </section>
     </div>
+  );
+}
+
+export default function SignInPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center px-6 text-sm text-gray-600">
+          Loading sign-in...
+        </div>
+      }
+    >
+      <SignInPageContent />
+    </Suspense>
   );
 }

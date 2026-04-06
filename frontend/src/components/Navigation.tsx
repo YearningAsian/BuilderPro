@@ -74,6 +74,12 @@ export default function Navigation() {
     [currentUser?.role],
   );
 
+  const isAdmin = currentUser?.role === "admin";
+  const roleLabel = isAdmin ? "Workspace Admin" : "Invited Worker";
+  const roleBadgeClasses = isAdmin
+    ? "border-orange-400/30 bg-orange-500/20 text-orange-200"
+    : "border-blue-400/30 bg-blue-500/20 text-blue-200";
+
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);
 
@@ -112,6 +118,13 @@ export default function Navigation() {
 
         {/* Footer */}
         <div className="px-3 py-4 border-t border-white/10 space-y-2">
+          <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2">
+            <p className="text-[11px] uppercase tracking-wide text-gray-400">Signed in as</p>
+            <p className="mt-1 truncate text-sm font-medium text-white">{currentUser?.email ?? "builder@pro"}</p>
+            <span className={`mt-2 inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${roleBadgeClasses}`}>
+              {roleLabel}
+            </span>
+          </div>
           <button
             type="button"
             onClick={signOut}
