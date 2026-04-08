@@ -34,13 +34,14 @@ pick_python() {
 port_in_use() {
   local port="$1"
 
+  # Prefer ss when available (common on Linux), then fall back for macOS.
   if command -v ss >/dev/null 2>&1; then
     ss -ltn "( sport = :$port )" | tail -n +2 | grep -q ":$port"
     return
   fi
 
   if command -v lsof >/dev/null 2>&1; then
-    lsof -iTCP:"$port" -sTCP:LISTEN -t >/dev/null 2>&1
+    lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1
     return
   fi
 

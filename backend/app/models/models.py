@@ -1,5 +1,4 @@
 from uuid import uuid4
-
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
@@ -14,7 +13,6 @@ from sqlalchemy import (
     func,
 )
 from sqlalchemy.orm import relationship
-
 from app.db.base import Base
 
 
@@ -165,7 +163,6 @@ class ProjectItem(Base):
     workspace = relationship("Workspace", back_populates="project_items")
     project = relationship("Project", back_populates="items")
     material = relationship("Material", back_populates="project_items")
-
 
 class Workspace(Base):
     __tablename__ = "workspaces"
