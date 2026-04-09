@@ -66,9 +66,14 @@ Edit `.env`:
 ```env
 DATABASE_URL=postgresql://user:password@localhost:5432/builderpro
 SUPABASE_URL=your_supabase_url
-SUPABASE_KEY=your_supabase_key
+SUPABASE_KEY=your_supabase_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 SECRET_KEY=your-secret-key-for-production
 ```
+
+> Use `SUPABASE_SERVICE_ROLE_KEY` on the backend if you want workspace signup to auto-confirm the email and return a session immediately.
+>
+> For local development, `ENABLE_LOCAL_AUTH_FALLBACK=true` lets signup keep working even if Supabase temporarily returns `429 Too Many Requests` during rapid testing.
 
 ## Running the Server
 

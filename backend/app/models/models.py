@@ -1,34 +1,20 @@
-import uuid
-from datetime import datetime
-
+from uuid import uuid4
 from sqlalchemy import (
-    Column, String, DateTime, Float, ForeignKey, Text, CheckConstraint, Numeric, event
+    Boolean,
+    CheckConstraint,
+    Column,
+    DateTime,
+    ForeignKey,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    Uuid,
+    func,
 )
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import relationship, declarative_base, Session
-from sqlalchemy.ext.hybrid import hybrid_property
+from sqlalchemy.orm import relationship
+from app.db.base import Base
 
-Base = declarative_base()
-
-
-# =====================================================
-# updated_at auto-update via SQLAlchemy event listener
-# Any model that has an updated_at column gets it set
-# automatically on every UPDATE — no manual tracking needed.
-# =====================================================
-
-def _set_updated_at(mapper, connection, target):
-    if hasattr(target, "updated_at"):
-        target.updated_at = datetime.utcnow()
-
-def register_updated_at(cls):
-    event.listen(cls, "before_update", _set_updated_at)
-    return cls
-
-
-# =====================================================
-# MODELS
-# =====================================================
 
 class User(Base):
     __tablename__ = "users"
@@ -36,72 +22,91 @@ class User(Base):
         CheckConstraint("role IN ('admin', 'user')", name="ck_users_role"),
     )
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, nullable=False)
-    email = Column(String(255), unique=True, nullable=False)
-    full_name = Column(String(255), nullable=True)
-    role = Column(String(20), nullable=False, default="user")
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    email = Column(String, unique=True, nullable=False, index=True)
+    full_name = Column(String, nullable=True)
+    role = Column(String, nullable=False, default="user")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     projects = relationship("Project", back_populates="created_by_user")
     workspace_memberships = relationship("WorkspaceMember", back_populates="user", cascade="all, delete-orphan")
     created_workspaces = relationship("Workspace", back_populates="created_by_user")
-    created_invites = relationship("WorkspaceInvite", foreign_keys="WorkspaceInvite.invited_by_user_id", back_populates="invited_by_user")
-    accepted_invites = relationship("WorkspaceInvite", foreign_keys="WorkspaceInvite.accepted_by_user_id", back_populates="accepted_by_user")
+    created_invites = relationship(
+        "WorkspaceInvite",
+        foreign_keys="WorkspaceInvite.invited_by_user_id",
+        back_populates="invited_by_user",
+    )
+    accepted_invites = relationship(
+        "WorkspaceInvite",
+        foreign_keys="WorkspaceInvite.accepted_by_user_id",
+        back_populates="accepted_by_user",
+    )
+    audit_logs = relationship("AuditLog", back_populates="actor")
 
 
 class Customer(Base):
     __tablename__ = "customers"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, nullable=False)
-    name = Column(String(255), nullable=False)
-    phone = Column(String(50), nullable=True)
-    email = Column(String(255), nullable=True)
-    address = Column(Text, nullable=True)
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    workspace_id = Column(Uuid(as_uuid=True), ForeignKey("workspaces.id"), nullable=False, index=True)
+    name = Column(String, nullable=False, index=True)
+    phone = Column(String, nullable=True)
+    email = Column(String, nullable=True)
+    address = Column(String, nullable=True)
     notes = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
+    workspace = relationship("Workspace", back_populates="customers")
     projects = relationship("Project", back_populates="customer")
 
 
 class Vendor(Base):
     __tablename__ = "vendors"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "name", name="uq_vendors_workspace_name"),
+    )
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, nullable=False)
-    name = Column(String(255), nullable=False)
-    phone = Column(String(50), nullable=True)
-    email = Column(String(255), nullable=True)
-    address = Column(Text, nullable=True)
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    workspace_id = Column(Uuid(as_uuid=True), ForeignKey("workspaces.id"), nullable=False, index=True)
+    name = Column(String, nullable=False, index=True)
+    phone = Column(String, nullable=True)
+    email = Column(String, nullable=True)
+    address = Column(String, nullable=True)
     notes = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
+    workspace = relationship("Workspace", back_populates="vendors")
     materials = relationship("Material", back_populates="default_vendor")
 
 
-@register_updated_at
 class Material(Base):
     __tablename__ = "materials"
     __table_args__ = (
         CheckConstraint("unit_cost >= 0", name="ck_materials_unit_cost_non_negative"),
         CheckConstraint("default_waste_pct >= 0", name="ck_materials_waste_pct_non_negative"),
+        UniqueConstraint("workspace_id", "sku", name="uq_materials_workspace_sku"),
     )
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, nullable=False)
-    name = Column(String(255), nullable=False)
-    category = Column(String(100), nullable=True)
-    unit_type = Column(String(50), nullable=False)
-    unit_cost = Column(Float, nullable=False, default=0.0)
-    default_vendor_id = Column(UUID(as_uuid=True), ForeignKey("vendors.id"), nullable=True)
-    default_waste_pct = Column(Float, nullable=False, default=0.0)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    workspace_id = Column(Uuid(as_uuid=True), ForeignKey("workspaces.id"), nullable=False, index=True)
+    name = Column(String, nullable=False, index=True)
+    category = Column(String, nullable=True, index=True)
+    unit_type = Column(String, nullable=False)
+    unit_cost = Column(Numeric(12, 2), nullable=False)
+    sku = Column(String, nullable=True)
+    default_vendor_id = Column(Uuid(as_uuid=True), ForeignKey("vendors.id"), nullable=True, index=True)
+    size_dims = Column(String, nullable=True)
+    notes = Column(Text, nullable=True)
+    is_taxable = Column(Boolean, nullable=False, default=True)
+    default_waste_pct = Column(Numeric(5, 2), nullable=False, default=0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
+    workspace = relationship("Workspace", back_populates="materials")
     default_vendor = relationship("Vendor", back_populates="materials")
     project_items = relationship("ProjectItem", back_populates="material")
 
 
-@register_updated_at
 class Project(Base):
     __tablename__ = "projects"
     __table_args__ = (
@@ -110,97 +115,86 @@ class Project(Base):
         CheckConstraint("default_waste_pct >= 0", name="ck_projects_waste_pct_non_negative"),
     )
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, nullable=False)
-    name = Column(String(255), nullable=False)
-    customer_id = Column(UUID(as_uuid=True), ForeignKey("customers.id"), nullable=False)
-    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
-    default_tax_pct = Column(Float, nullable=False, default=0.0)
-    default_waste_pct = Column(Float, nullable=False, default=0.0)
-    status = Column(String(20), nullable=False, default="draft")
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    workspace_id = Column(Uuid(as_uuid=True), ForeignKey("workspaces.id"), nullable=False, index=True)
+    name = Column(String, nullable=False, index=True)
+    customer_id = Column(Uuid(as_uuid=True), ForeignKey("customers.id"), nullable=False, index=True)
+    status = Column(String, nullable=False, default="draft", index=True)
+    default_tax_pct = Column(Numeric(5, 2), nullable=False, default=0)
+    default_waste_pct = Column(Numeric(5, 2), nullable=False, default=0)
+    created_by = Column(Uuid(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
+    workspace = relationship("Workspace", back_populates="projects")
     customer = relationship("Customer", back_populates="projects")
     created_by_user = relationship("User", back_populates="projects")
     items = relationship("ProjectItem", back_populates="project", cascade="all, delete-orphan")
 
 
-@register_updated_at
 class ProjectItem(Base):
     __tablename__ = "project_items"
     __table_args__ = (
         CheckConstraint("quantity > 0", name="ck_project_items_quantity_positive"),
+        CheckConstraint("unit_cost >= 0", name="ck_project_items_unit_cost_non_negative"),
         CheckConstraint("waste_pct >= 0", name="ck_project_items_waste_pct_non_negative"),
+        CheckConstraint("order_status IN ('draft', 'ordered', 'received', 'cancelled')", name="ck_project_items_order_status"),
     )
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, nullable=False)
-    project_id = Column(UUID(as_uuid=True), ForeignKey("projects.id"), nullable=False)
-    material_id = Column(UUID(as_uuid=True), ForeignKey("materials.id"), nullable=False)
-    quantity = Column(Float, nullable=False)
-    waste_pct = Column(Float, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    workspace_id = Column(Uuid(as_uuid=True), ForeignKey("workspaces.id"), nullable=False, index=True)
+    project_id = Column(Uuid(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    material_id = Column(Uuid(as_uuid=True), ForeignKey("materials.id", ondelete="RESTRICT"), nullable=False, index=True)
+    quantity = Column(Numeric(12, 3), nullable=False)
+    unit_type = Column(String, nullable=False)
+    unit_cost = Column(Numeric(12, 2), nullable=False)
+    waste_pct = Column(Numeric(5, 2), nullable=False, default=0)
+    total_qty = Column(Numeric(12, 3), nullable=False)
+    line_subtotal = Column(Numeric(12, 2), nullable=False)
+    order_status = Column(String, nullable=False, default="draft", server_default="draft", index=True)
+    po_number = Column(String, nullable=True, index=True)
+    purchase_notes = Column(Text, nullable=True)
+    notes = Column(Text, nullable=True)
+    ordered_at = Column(DateTime(timezone=True), nullable=True)
+    received_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
+    workspace = relationship("Workspace", back_populates="project_items")
     project = relationship("Project", back_populates="items")
     material = relationship("Material", back_populates="project_items")
-
-    @hybrid_property
-    def effective_waste_pct(self):
-        if self.waste_pct is not None:
-            return float(self.waste_pct)
-        if self.material is not None and self.material.default_waste_pct is not None:
-            return float(self.material.default_waste_pct)
-        return 0.0
-
-    @hybrid_property
-    def total_qty(self):
-        return float(self.quantity) * (1.0 + (self.effective_waste_pct or 0.0) / 100.0)
-
-    @total_qty.expression
-    def total_qty(cls):
-        from sqlalchemy import func, literal
-        return cls.quantity * (1.0 + (func.coalesce(cls.waste_pct, literal(0.0)) / 100.0))
-
-    @property
-    def line_subtotal(self):
-        if self.material is None:
-            return 0.0
-        return float(self.total_qty) * float(self.material.unit_cost)
-
-
-# Register updated_at listeners for Customer and Vendor
-register_updated_at(Customer)
-register_updated_at(Vendor)
-
-
-# =====================================================
-# WORKSPACE MODELS (auth.py depends on these)
-# =====================================================
 
 class Workspace(Base):
     __tablename__ = "workspaces"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, nullable=False)
-    name = Column(String(255), nullable=False, unique=True)
-    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    name = Column(String, nullable=False, unique=True, index=True)
+    created_by = Column(Uuid(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     created_by_user = relationship("User", back_populates="created_workspaces")
+    customers = relationship("Customer", back_populates="workspace")
+    vendors = relationship("Vendor", back_populates="workspace")
+    materials = relationship("Material", back_populates="workspace")
+    projects = relationship("Project", back_populates="workspace")
+    project_items = relationship("ProjectItem", back_populates="workspace")
     members = relationship("WorkspaceMember", back_populates="workspace", cascade="all, delete-orphan")
     invites = relationship("WorkspaceInvite", back_populates="workspace", cascade="all, delete-orphan")
+    audit_logs = relationship("AuditLog", back_populates="workspace", cascade="all, delete-orphan")
 
 
 class WorkspaceMember(Base):
     __tablename__ = "workspace_members"
     __table_args__ = (
+        UniqueConstraint("workspace_id", "user_id", name="uq_workspace_members_workspace_user"),
         CheckConstraint("role IN ('admin', 'user')", name="ck_workspace_members_role"),
     )
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, nullable=False)
-    workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    role = Column(String(20), nullable=False, default="user")
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    workspace_id = Column(Uuid(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Uuid(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    role = Column(String, nullable=False, default="user")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     workspace = relationship("Workspace", back_populates="members")
     user = relationship("User", back_populates="workspace_memberships")
@@ -209,16 +203,40 @@ class WorkspaceMember(Base):
 class WorkspaceInvite(Base):
     __tablename__ = "workspace_invites"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, nullable=False)
-    workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False)
-    invited_email = Column(String(255), nullable=False)
-    invite_token = Column(String(255), nullable=False, unique=True)
-    invited_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
-    expires_at = Column(DateTime, nullable=False)
-    accepted_at = Column(DateTime, nullable=True)
-    accepted_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    workspace_id = Column(Uuid(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False, index=True)
+    invited_email = Column(String, nullable=False, index=True)
+    invite_token = Column(String, nullable=False, unique=True, index=True)
+    invited_by_user_id = Column(Uuid(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    accepted_at = Column(DateTime(timezone=True), nullable=True)
+    accepted_by_user_id = Column(Uuid(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     workspace = relationship("Workspace", back_populates="invites")
-    invited_by_user = relationship("User", foreign_keys=[invited_by_user_id], back_populates="created_invites")
-    accepted_by_user = relationship("User", foreign_keys=[accepted_by_user_id], back_populates="accepted_invites")
+    invited_by_user = relationship(
+        "User",
+        foreign_keys=[invited_by_user_id],
+        back_populates="created_invites",
+    )
+    accepted_by_user = relationship(
+        "User",
+        foreign_keys=[accepted_by_user_id],
+        back_populates="accepted_invites",
+    )
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    workspace_id = Column(Uuid(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Uuid(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    action = Column(String, nullable=False, index=True)
+    resource_type = Column(String, nullable=False)
+    resource_id = Column(String, nullable=True)
+    details = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+
+    workspace = relationship("Workspace", back_populates="audit_logs")
+    actor = relationship("User", back_populates="audit_logs")

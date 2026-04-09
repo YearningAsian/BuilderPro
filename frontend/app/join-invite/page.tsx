@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { FormEvent, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { FormEvent, Suspense, useEffect, useMemo, useState } from "react";
 
 type FormErrors = {
   inviteToken?: string;
@@ -15,8 +15,32 @@ type FormErrors = {
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-export default function JoinInvitePage() {
+function extractInviteDetails(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return { token: "", email: undefined as string | undefined };
+  }
+
+  try {
+    const url = new URL(trimmed);
+    return {
+      token: url.searchParams.get("token") || url.searchParams.get("invite_token") || trimmed,
+      email: url.searchParams.get("email") || undefined,
+    };
+  } catch {
+    const tokenMatch = trimmed.match(/[?&](?:token|invite_token)=([^&]+)/i);
+    const emailMatch = trimmed.match(/[?&]email=([^&]+)/i);
+
+    return {
+      token: tokenMatch ? decodeURIComponent(tokenMatch[1]) : trimmed,
+      email: emailMatch ? decodeURIComponent(emailMatch[1]) : undefined,
+    };
+  }
+}
+
+function JoinInvitePageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [inviteToken, setInviteToken] = useState("");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -25,6 +49,19 @@ export default function JoinInvitePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState<FormErrors>({});
   const [successMessage, setSuccessMessage] = useState("");
+
+  useEffect(() => {
+    const tokenFromQuery = searchParams.get("token") || searchParams.get("invite_token");
+    const emailFromQuery = searchParams.get("email");
+
+    if (tokenFromQuery) {
+      setInviteToken(tokenFromQuery);
+    }
+
+    if (emailFromQuery) {
+      setEmail(emailFromQuery);
+    }
+  }, [searchParams]);
 
   const canSubmit = useMemo(
     () =>
@@ -79,7 +116,7 @@ export default function JoinInvitePage() {
     setIsSubmitting(true);
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001/api";
+      const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
       const response = await fetch(`${baseUrl}/auth/join-invite`, {
         method: "POST",
         headers: {
@@ -148,7 +185,7 @@ export default function JoinInvitePage() {
       <div className="card w-full max-w-lg p-8 animate-fade-in">
         <h1 className="text-2xl font-semibold text-gray-900">Join your Builder Pro workspace</h1>
         <p className="mt-2 text-sm text-gray-600">
-          Enter your invite token and complete account setup to join your company workspace.
+          Paste the invite link from the admin email, or just the invite token, then complete account setup to join that company workspace.
         </p>
 
         <form className="mt-6 space-y-4" onSubmit={onSubmit} noValidate>
@@ -160,10 +197,19 @@ export default function JoinInvitePage() {
               id="inviteToken"
               type="text"
               value={inviteToken}
-              onChange={(event) => setInviteToken(event.target.value)}
-              placeholder="Enter invite token"
+              onChange={(event) => {
+                const parsed = extractInviteDetails(event.target.value);
+                setInviteToken(parsed.token);
+                if (parsed.email) {
+                  setEmail(parsed.email);
+                }
+              }}
+              placeholder="Paste the invite link or token"
               className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm text-gray-900 bg-white outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-400"
             />
+            <p className="mt-1 text-xs text-gray-500">
+              You can paste the full invite link from the email and the token will be filled in automatically.
+            </p>
             {errors.inviteToken && <p className="mt-1 text-sm text-red-600">{errors.inviteToken}</p>}
           </div>
 
@@ -249,5 +295,21 @@ export default function JoinInvitePage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function JoinInvitePage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-gray-50 px-6 py-10 sm:px-10 sm:py-14 flex items-center justify-center">
+          <div className="card w-full max-w-lg p-8 text-center text-sm text-gray-600">
+            Loading invite details...
+          </div>
+        </div>
+      }
+    >
+      <JoinInvitePageContent />
+    </Suspense>
   );
 }

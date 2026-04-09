@@ -1,9 +1,12 @@
 /**
  * Type-safe API client for the FastAPI backend.
- * Reads the auth token from localStorage (set on sign-in).
- * All requests include the Bearer token automatically.
+ *
+ * The frontend now uses these methods for live reads and writes,
+ * while keeping the existing UI components and types intact.
  */
+import { clearLocalAuthState, getActiveSession } from "@/lib/auth";
 import type {
+  AuditLogEntry,
   Material,
   MaterialCreate,
   Vendor,
@@ -14,255 +17,255 @@ import type {
   ProjectCreate,
   ProjectItem,
   ProjectItemCreate,
+  WorkspaceMember,
+  WorkspaceRole,
 } from "@/types";
 
-export const BASE =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
+const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
 
-// ─── Auth token helpers ───────────────────────────────────────
+const JSON_HEADERS: HeadersInit = {
+  "Content-Type": "application/json",
+  Accept: "application/json",
+};
 
-export function getToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem("bp_access_token");
-}
-
-export function setToken(token: string): void {
-  localStorage.setItem("bp_access_token", token);
-}
-
-export function clearToken(): void {
-  localStorage.removeItem("bp_access_token");
-  localStorage.removeItem("bp_workspace_id");
-  localStorage.removeItem("bp_workspace_name");
-  localStorage.removeItem("bp_role");
-  localStorage.removeItem("bp_email");
-  document.cookie = "bp_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
-}
-
-export function setSession(data: {
-  // sets localStorage + cookie for middleware
-  access_token: string;
+export type SessionInfoResponse = {
+  role: WorkspaceRole;
+  email: string;
   workspace_id?: string | null;
   workspace_name?: string | null;
-  role: string;
-  email: string;
-}): void {
-  localStorage.setItem("bp_access_token", data.access_token);
-  localStorage.setItem("bp_role", data.role);
-  localStorage.setItem("bp_email", data.email);
-  if (data.workspace_id) localStorage.setItem("bp_workspace_id", data.workspace_id);
-  if (data.workspace_name) localStorage.setItem("bp_workspace_name", data.workspace_name);
+};
+
+export type UpdateWorkspaceMemberPayload = {
+  role: WorkspaceRole;
+};
+
+export type CreateInvitePayload = {
+  workspace_id: string;
+  invited_email: string;
+  expires_in_days?: number;
+};
+
+export type CreateInviteResponse = {
+  invite_token: string;
+  workspace_id: string;
+  invited_email: string;
+  expires_at: string;
+};
+
+function toNumber(value: unknown, fallback = 0): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return fallback;
 }
 
-// ─── Core request helper ──────────────────────────────────────
+function getAuthHeaders(extraHeaders?: HeadersInit): HeadersInit {
+  const session = getActiveSession();
+  if (!session?.accessToken) {
+    throw new Error("You must be signed in to continue.");
+  }
+
+  return {
+    ...JSON_HEADERS,
+    ...(extraHeaders ?? {}),
+    Authorization: `Bearer ${session.accessToken}`,
+  };
+}
+
+function handleExpiredSession(message: string) {
+  if (typeof window === "undefined") return;
+
+  clearLocalAuthState();
+  sessionStorage.setItem("builderpro_flash_message", message);
+
+  const currentPath = `${window.location.pathname}${window.location.search}`;
+  const signInUrl = new URL("/signin", window.location.origin);
+  if (currentPath && currentPath !== "/signin") {
+    signInUrl.searchParams.set("next", currentPath);
+  }
+  signInUrl.searchParams.set("signed_out", "1");
+
+  window.location.replace(signInUrl.toString());
+}
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const token = getToken();
-  const headers: HeadersInit = {
-    "Content-Type": "application/json",
-    Accept: "application/json",
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    ...init?.headers,
-  };
+  const session = getActiveSession();
+  const authHeaders: HeadersInit = session?.accessToken
+    ? { Authorization: `Bearer ${session.accessToken}` }
+    : {};
 
-  const res = await fetch(url, { ...init, headers });
+  const res = await fetch(url, {
+    ...init,
+    credentials: "include",
+    headers: { ...JSON_HEADERS, ...authHeaders, ...init?.headers },
+  });
 
-  if (res.status === 401) {
-    clearToken();
-    window.location.href = "/signin";
-    throw new Error("Session expired. Please sign in again.");
+  const bodyText = await res.text().catch(() => "");
+  let payload: unknown = null;
+
+  if (bodyText) {
+    try {
+      payload = JSON.parse(bodyText);
+    } catch {
+      payload = bodyText;
+    }
   }
 
   if (!res.ok) {
-    const body = await res.text().catch(() => "Unknown error");
-    throw new Error(`API ${res.status}: ${body}`);
+    let detailMessage = "";
+
+    if (payload && typeof payload === "object" && "detail" in payload) {
+      const detail = (payload as { detail?: unknown }).detail;
+      if (typeof detail === "string" && detail.trim()) {
+        detailMessage = detail;
+      }
+    } else if (typeof payload === "string" && payload.trim()) {
+      detailMessage = payload;
+    }
+
+    const isExpiredToken =
+      res.status === 401 &&
+      /invalid jwt|token is expired|jwt expired|invalid claims/i.test(detailMessage);
+
+    if (isExpiredToken) {
+      handleExpiredSession("Your session expired. Please sign in again.");
+    }
+
+    throw new Error(detailMessage || `API ${res.status}`);
   }
 
-  if (res.status === 204) return undefined as T;
-  return res.json() as Promise<T>;
+  if (res.status === 204 || !bodyText) {
+    return undefined as T;
+  }
+
+  return payload as T;
 }
 
-// ─── Auth ─────────────────────────────────────────────────────
+function normalizeMaterial(material: Material): Material {
+  return {
+    ...material,
+    unit_cost: toNumber(material.unit_cost),
+    default_waste_pct: toNumber(material.default_waste_pct),
+  };
+}
 
-export const authApi = {
-  signIn: (email: string, password: string) =>
-    request<{
-      access_token: string;
-      token_type: string;
-      role: string;
-      email: string;
-      workspace_id: string | null;
-      workspace_name: string | null;
-    }>(`${BASE}/auth/signin`, {
-      method: "POST",
-      body: JSON.stringify({ email, password }),
-    }),
+function normalizeProjectItem(item: ProjectItem): ProjectItem {
+  return {
+    ...item,
+    order_status: item.order_status ?? "draft",
+    po_number: item.po_number ?? null,
+    purchase_notes: item.purchase_notes ?? null,
+    ordered_at: item.ordered_at ?? null,
+    received_at: item.received_at ?? null,
+    quantity: toNumber(item.quantity),
+    unit_cost: toNumber(item.unit_cost),
+    waste_pct: toNumber(item.waste_pct),
+    total_qty: toNumber(item.total_qty),
+    line_subtotal: toNumber(item.line_subtotal),
+  };
+}
 
-  signUpCompany: (data: {
-    full_name: string;
-    company_name: string;
-    email: string;
-    password: string;
-  }) =>
-    request<{
-      access_token: string | null;
-      role: string;
-      email: string;
-      workspace_id: string;
-      workspace_name: string;
-      requires_email_confirmation: boolean;
-    }>(`${BASE}/auth/signup-company`, { method: "POST", body: JSON.stringify(data) }),
-
-  joinInvite: (data: {
-    invite_token: string;
-    full_name: string;
-    email: string;
-    password: string;
-  }) =>
-    request<{
-      access_token: string | null;
-      role: string;
-      email: string;
-      workspace_id: string;
-      workspace_name: string;
-      requires_email_confirmation: boolean;
-    }>(`${BASE}/auth/join-invite`, { method: "POST", body: JSON.stringify(data) }),
-
-  createInvite: (workspace_id: string, invited_email: string, expires_in_days = 7) =>
-    request<{
-      invite_token: string;
-      workspace_id: string;
-      invited_email: string;
-      expires_at: string;
-    }>(`${BASE}/auth/invites`, {
-      method: "POST",
-      body: JSON.stringify({ workspace_id, invited_email, expires_in_days }),
-    }),
-};
-
-// ─── Materials ────────────────────────────────────────────────
+function normalizeProject(project: Project): Project {
+  return {
+    ...project,
+    default_tax_pct: toNumber(project.default_tax_pct),
+    default_waste_pct: toNumber(project.default_waste_pct),
+    items: Array.isArray(project.items) ? project.items.map(normalizeProjectItem) : [],
+  };
+}
 
 export const materialsApi = {
-  list: () => request<Material[]>(`${BASE}/materials`),
-  get: (id: string) => request<Material>(`${BASE}/materials/${id}`),
-  search: (name?: string, category?: string) => {
-    const params = new URLSearchParams();
-    if (name) params.set("name", name);
-    if (category) params.set("category", category);
-    return request<Material[]>(`${BASE}/materials/search?${params}`);
-  },
-  create: (data: MaterialCreate) =>
-    request<Material>(`${BASE}/materials`, {
-      method: "POST",
-      body: JSON.stringify(data),
-    }),
-  update: (id: string, data: Partial<MaterialCreate>) =>
-    request<Material>(`${BASE}/materials/${id}`, {
-      method: "PUT",
-      body: JSON.stringify(data),
-    }),
+  list: async () => (await request<Material[]>(`${BASE}/materials`)).map(normalizeMaterial),
+  get: async (id: string) => normalizeMaterial(await request<Material>(`${BASE}/materials/${id}`)),
+  create: async (data: MaterialCreate) =>
+    normalizeMaterial(await request<Material>(`${BASE}/materials`, { method: "POST", body: JSON.stringify(data) })),
+  update: async (id: string, data: Partial<MaterialCreate>) =>
+    normalizeMaterial(await request<Material>(`${BASE}/materials/${id}`, { method: "PUT", body: JSON.stringify(data) })),
   delete: (id: string) =>
     request<void>(`${BASE}/materials/${id}`, { method: "DELETE" }),
 };
 
-// ─── Projects ─────────────────────────────────────────────────
-
-export interface ProjectSummary {
-  project_id: string;
-  item_count: number;
-  subtotal: number;
-  tax_pct: number;
-  tax_amount: number;
-  grand_total: number;
-}
-
 export const projectsApi = {
-  list: () => request<Project[]>(`${BASE}/projects`),
-  get: (id: string) => request<Project>(`${BASE}/projects/${id}`),
-  summary: (id: string) => request<ProjectSummary>(`${BASE}/projects/${id}/summary`),
-  create: (data: ProjectCreate) =>
-    request<Project>(`${BASE}/projects`, {
-      method: "POST",
-      body: JSON.stringify(data),
-    }),
-  update: (id: string, data: Partial<ProjectCreate>) =>
-    request<Project>(`${BASE}/projects/${id}`, {
-      method: "PUT",
-      body: JSON.stringify(data),
-    }),
+  list: async () => (await request<Project[]>(`${BASE}/projects`)).map(normalizeProject),
+  get: async (id: string) => normalizeProject(await request<Project>(`${BASE}/projects/${id}`)),
+  create: async (data: ProjectCreate) =>
+    normalizeProject(await request<Project>(`${BASE}/projects`, { method: "POST", body: JSON.stringify(data) })),
+  update: async (id: string, data: Partial<ProjectCreate>) =>
+    normalizeProject(await request<Project>(`${BASE}/projects/${id}`, { method: "PUT", body: JSON.stringify(data) })),
   delete: (id: string) =>
     request<void>(`${BASE}/projects/${id}`, { method: "DELETE" }),
 };
 
-// ─── Project items ─────────────────────────────────────────────
-
-export interface LineItemResponse {
-  id: string;
-  project_id: string;
-  material_id: string;
-  material_name: string;
-  unit_type: string;
-  unit_cost: number;
-  quantity: number;
-  waste_pct: number;
-  total_qty: number;
-  line_subtotal: number;
-  created_at: string;
-}
-
 export const projectItemsApi = {
-  list: (projectId: string) =>
-    request<LineItemResponse[]>(`${BASE}/projects/${projectId}/items`),
-  create: (projectId: string, data: { material_id: string; quantity: number; waste_pct?: number }) =>
-    request<LineItemResponse>(`${BASE}/projects/${projectId}/items`, {
-      method: "POST",
-      body: JSON.stringify(data),
-    }),
-  update: (projectId: string, itemId: string, data: { quantity?: number; waste_pct?: number }) =>
-    request<LineItemResponse>(`${BASE}/projects/${projectId}/items/${itemId}`, {
-      method: "PUT",
-      body: JSON.stringify(data),
-    }),
-  delete: (projectId: string, itemId: string) =>
-    request<void>(`${BASE}/projects/${projectId}/items/${itemId}`, {
-      method: "DELETE",
-    }),
+  list: async (projectId: string) =>
+    (await request<ProjectItem[]>(`${BASE}/orders`))
+      .map(normalizeProjectItem)
+      .filter((item) => item.project_id === projectId),
+  create: async (projectId: string, data: ProjectItemCreate) =>
+    normalizeProjectItem(
+      await request<ProjectItem>(`${BASE}/orders?project_id=${encodeURIComponent(projectId)}`, {
+        method: "POST",
+        body: JSON.stringify(data),
+      })
+    ),
+  update: async (
+    _projectId: string,
+    itemId: string,
+    data: Partial<Pick<ProjectItem, "quantity" | "unit_cost" | "waste_pct" | "order_status" | "po_number" | "purchase_notes" | "notes">>
+  ) =>
+    normalizeProjectItem(
+      await request<ProjectItem>(`${BASE}/orders/${itemId}`, {
+        method: "PUT",
+        body: JSON.stringify(data),
+      })
+    ),
+  delete: (_projectId: string, itemId: string) =>
+    request<void>(`${BASE}/orders/${itemId}`, { method: "DELETE" }),
 };
-
-// ─── Customers ────────────────────────────────────────────────
-
-export const customersApi = {
-  list: () => request<Customer[]>(`${BASE}/customers`),
-  get: (id: string) => request<Customer>(`${BASE}/customers/${id}`),
-  create: (data: CustomerCreate) =>
-    request<Customer>(`${BASE}/customers`, {
-      method: "POST",
-      body: JSON.stringify(data),
-    }),
-  update: (id: string, data: Partial<CustomerCreate>) =>
-    request<Customer>(`${BASE}/customers/${id}`, {
-      method: "PUT",
-      body: JSON.stringify(data),
-    }),
-  delete: (id: string) =>
-    request<void>(`${BASE}/customers/${id}`, { method: "DELETE" }),
-};
-
-// ─── Vendors ──────────────────────────────────────────────────
 
 export const vendorsApi = {
   list: () => request<Vendor[]>(`${BASE}/vendors`),
   get: (id: string) => request<Vendor>(`${BASE}/vendors/${id}`),
   create: (data: VendorCreate) =>
-    request<Vendor>(`${BASE}/vendors`, {
-      method: "POST",
-      body: JSON.stringify(data),
-    }),
+    request<Vendor>(`${BASE}/vendors`, { method: "POST", body: JSON.stringify(data) }),
   update: (id: string, data: Partial<VendorCreate>) =>
-    request<Vendor>(`${BASE}/vendors/${id}`, {
-      method: "PUT",
-      body: JSON.stringify(data),
-    }),
+    request<Vendor>(`${BASE}/vendors/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   delete: (id: string) =>
     request<void>(`${BASE}/vendors/${id}`, { method: "DELETE" }),
+};
+
+export const customersApi = {
+  list: () => request<Customer[]>(`${BASE}/customers`),
+  get: (id: string) => request<Customer>(`${BASE}/customers/${id}`),
+  create: (data: CustomerCreate) =>
+    request<Customer>(`${BASE}/customers`, { method: "POST", body: JSON.stringify(data) }),
+  update: (id: string, data: Partial<CustomerCreate>) =>
+    request<Customer>(`${BASE}/customers/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  delete: (id: string) =>
+    request<void>(`${BASE}/customers/${id}`, { method: "DELETE" }),
+};
+
+export const authApi = {
+  me: () => request<SessionInfoResponse>(`${BASE}/auth/me`, { headers: getAuthHeaders() }),
+  listAuditEvents: () => request<AuditLogEntry[]>(`${BASE}/auth/audit-log`, { headers: getAuthHeaders() }),
+  listMembers: () => request<WorkspaceMember[]>(`${BASE}/auth/members`, { headers: getAuthHeaders() }),
+  updateMember: (memberId: string, data: UpdateWorkspaceMemberPayload) =>
+    request<WorkspaceMember>(`${BASE}/auth/members/${encodeURIComponent(memberId)}`, {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data),
+    }),
+  deleteMember: (memberId: string) =>
+    request<void>(`${BASE}/auth/members/${encodeURIComponent(memberId)}`, {
+      method: "DELETE",
+      headers: getAuthHeaders(),
+    }),
+  createInvite: (data: CreateInvitePayload) =>
+    request<CreateInviteResponse>(`${BASE}/auth/invites`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data),
+    }),
 };

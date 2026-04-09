@@ -79,7 +79,7 @@ export default function SignUpPage() {
     setIsSubmitting(true);
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001/api";
+      const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
       const response = await fetch(`${baseUrl}/auth/signup-company`, {
         method: "POST",
         headers: {

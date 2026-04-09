@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { FormEvent, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { FormEvent, Suspense, useEffect, useMemo, useState } from "react";
 
 type FormErrors = {
   email?: string;
@@ -15,6 +15,8 @@ type AuthResponse = {
   token_type: string;
   role: "admin" | "user";
   email: string;
+  workspace_id?: string | null;
+  workspace_name?: string | null;
 };
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -36,7 +38,7 @@ function validateForm(email: string, password: string): FormErrors {
 }
 
 async function signInRequest(email: string, password: string): Promise<AuthResponse> {
-  const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001/api";
+  const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
   const response = await fetch(`${baseUrl}/auth/signin`, {
     method: "POST",
     headers: {
@@ -77,17 +79,34 @@ async function signInRequest(email: string, password: string): Promise<AuthRespo
     token_type: auth.token_type || "bearer",
     role: auth.role,
     email: auth.email,
+    workspace_id: auth.workspace_id || null,
+    workspace_name: auth.workspace_name || null,
   };
 }
 
-export default function SignInPage() {
+function SignInPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [rememberSession, setRememberSession] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState<FormErrors>({});
+  const [signedOutMessage, setSignedOutMessage] = useState("");
+
+  useEffect(() => {
+    const flash = sessionStorage.getItem("builderpro_flash_message");
+    if (flash) {
+      setSignedOutMessage(flash);
+      sessionStorage.removeItem("builderpro_flash_message");
+      return;
+    }
+
+    if (searchParams.get("signed_out") === "1") {
+      setSignedOutMessage("You have been signed out.");
+    }
+  }, [searchParams]);
 
   const canSubmit = useMemo(
     () => email.trim().length > 0 && password.length > 0 && !isSubmitting,
@@ -114,6 +133,8 @@ export default function SignInPage() {
         role: auth.role,
         accessToken: auth.access_token,
         tokenType: auth.token_type,
+        workspaceId: auth.workspace_id || undefined,
+        workspaceName: auth.workspace_name || undefined,
         signedInAt: new Date().toISOString(),
       });
 
@@ -188,6 +209,12 @@ export default function SignInPage() {
         <div className="card w-full max-w-md p-6 sm:p-8 animate-fade-in">
           <h2 className="text-2xl font-semibold text-gray-900">Welcome back</h2>
           <p className="text-sm text-gray-600 mt-1 mb-6">Sign in to continue to Builder Pro</p>
+
+          {signedOutMessage && (
+            <p className="mb-4 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700" role="status">
+              {signedOutMessage}
+            </p>
+          )}
 
           <form onSubmit={onSubmit} noValidate className="space-y-4">
             <div>
@@ -315,5 +342,19 @@ export default function SignInPage() {
         </div>
       </section>
     </div>
+  );
+}
+
+export default function SignInPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center px-6 text-sm text-gray-600">
+          Loading sign-in...
+        </div>
+      }
+    >
+      <SignInPageContent />
+    </Suspense>
   );
 }

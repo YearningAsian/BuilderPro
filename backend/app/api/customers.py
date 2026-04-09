@@ -1,11 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
 from uuid import UUID
 
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+
+from app.api.auth import get_current_user, get_current_workspace_id
 from app.db.base import get_db
 from app.models.models import Customer, User
 from app.schemas.schemas import Customer as CustomerSchema, CustomerCreate, CustomerUpdate
-from app.api.dependencies import get_current_user
 
 router = APIRouter(prefix="/customers", tags=["customers"])
 
@@ -15,20 +16,38 @@ def list_customers(
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
+    current_workspace_id = Depends(get_current_workspace_id),
 ):
-    return db.query(Customer).offset(skip).limit(limit).all()
+    """Get customers for the active workspace."""
+    customers = (
+        db.query(Customer)
+        .filter(Customer.workspace_id == current_workspace_id)
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+    return customers
 
 
 @router.get("/{customer_id}", response_model=CustomerSchema)
 def get_customer(
     customer_id: UUID,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
+    current_workspace_id = Depends(get_current_workspace_id),
 ):
-    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    """Get a customer in the active workspace."""
+    customer = (
+        db.query(Customer)
+        .filter(Customer.id == customer_id, Customer.workspace_id == current_workspace_id)
+        .first()
+    )
     if not customer:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Customer not found"
+        )
     return customer
 
 
@@ -36,9 +55,11 @@ def get_customer(
 def create_customer(
     customer: CustomerCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
+    current_workspace_id = Depends(get_current_workspace_id),
 ):
-    db_customer = Customer(**customer.dict())
+    """Create a new customer in the active workspace."""
+    db_customer = Customer(**customer.model_dump(), workspace_id=current_workspace_id)
     db.add(db_customer)
     db.commit()
     db.refresh(db_customer)
@@ -50,15 +71,25 @@ def update_customer(
     customer_id: UUID,
     customer: CustomerUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
+    current_workspace_id = Depends(get_current_workspace_id),
 ):
-    db_customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    """Update a customer in the active workspace."""
+    db_customer = (
+        db.query(Customer)
+        .filter(Customer.id == customer_id, Customer.workspace_id == current_workspace_id)
+        .first()
+    )
     if not db_customer:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
-
-    for field, value in customer.dict(exclude_unset=True).items():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Customer not found"
+        )
+    
+    update_data = customer.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
         setattr(db_customer, field, value)
-
+    
     db.add(db_customer)
     db.commit()
     db.refresh(db_customer)
@@ -69,12 +100,21 @@ def update_customer(
 def delete_customer(
     customer_id: UUID,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
+    current_workspace_id = Depends(get_current_workspace_id),
 ):
-    db_customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    """Delete a customer in the active workspace."""
+    db_customer = (
+        db.query(Customer)
+        .filter(Customer.id == customer_id, Customer.workspace_id == current_workspace_id)
+        .first()
+    )
     if not db_customer:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
-
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Customer not found"
+        )
+    
     db.delete(db_customer)
     db.commit()
     return None

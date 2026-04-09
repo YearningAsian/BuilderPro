@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSignOut } from "@/hooks/useSignOut";
+import { getActiveSession } from "@/lib/auth";
 
 /**
  * HubSpot-inspired sidebar navigation.
@@ -28,9 +30,30 @@ const icons: Record<string, React.ReactNode> = {
       <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 012-2h2a2 2 0 012 2M9 5h6m-3 4v6m-3-3h6" />
     </svg>
   ),
+  orders: (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6M9 8h6m-9 12h12a2 2 0 002-2V6a2 2 0 00-2-2h-1.5a1 1 0 01-.8-.4l-.9-1.2A1 1 0 0014 2h-4a1 1 0 00-.8.4l-.9 1.2a1 1 0 01-.8.4H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+    </svg>
+  ),
+  customers: (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5V4H2v16h5m10 0v-2a4 4 0 00-4-4H9a4 4 0 00-4 4v2m12 0H7m8-11a3 3 0 11-6 0 3 3 0 016 0z" />
+    </svg>
+  ),
+  vendors: (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3 21h18M5 21V8l7-4 7 4v13M9 10h.01M9 13h.01M9 16h.01M15 10h.01M15 13h.01M15 16h.01" />
+    </svg>
+  ),
   search: (
     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35m0 0A7.5 7.5 0 1110.65 4.65a7.5 7.5 0 016 12" />
+    </svg>
+  ),
+  settings: (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317a1 1 0 011.35-.936l.906.363a1 1 0 001.06-.218l.642-.643a1 1 0 011.414 0l1.414 1.414a1 1 0 010 1.414l-.643.643a1 1 0 00-.218 1.06l.363.906a1 1 0 01-.936 1.35H16a1 1 0 00-.949.684l-.31.93a1 1 0 01-.95.684h-2.582a1 1 0 01-.95-.684l-.31-.93A1 1 0 008 10H6.964a1 1 0 01-.936-1.35l.363-.906a1 1 0 00-.218-1.06L5.53 6.04a1 1 0 010-1.414l1.414-1.414a1 1 0 011.414 0l.643.643a1 1 0 001.06.218l.264-.106z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 15.5A3.5 3.5 0 1012 8.5a3.5 3.5 0 000 7z" />
     </svg>
   ),
 };
@@ -45,12 +68,44 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", href: "/", icon: "dashboard" },
   { label: "Materials", href: "/materials", icon: "materials" },
   { label: "Projects", href: "/projects", icon: "projects" },
+  { label: "Orders", href: "/orders", icon: "orders" },
+  { label: "Customers", href: "/customers", icon: "customers" },
+  { label: "Vendors", href: "/vendors", icon: "vendors" },
   { label: "Search", href: "/search", icon: "search" },
 ];
 
 export default function Navigation() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [currentUser, setCurrentUser] = useState<ReturnType<typeof getActiveSession>>(null);
+  const { signOut, isSigningOut } = useSignOut();
+
+  useEffect(() => {
+    const syncSession = () => setCurrentUser(getActiveSession());
+    const timer = window.setTimeout(syncSession, 0);
+    window.addEventListener("focus", syncSession);
+    window.addEventListener("storage", syncSession);
+
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("focus", syncSession);
+      window.removeEventListener("storage", syncSession);
+    };
+  }, []);
+
+  const navItems = useMemo(
+    () =>
+      currentUser?.role === "admin"
+        ? [...NAV_ITEMS, { label: "Settings", href: "/settings", icon: "settings" as const }]
+        : NAV_ITEMS,
+    [currentUser?.role],
+  );
+
+  const isAdmin = currentUser?.role === "admin";
+  const roleLabel = isAdmin ? "Workspace Admin" : "Invited Worker";
+  const roleBadgeClasses = isAdmin
+    ? "border-orange-400/30 bg-orange-500/20 text-orange-200"
+    : "border-blue-400/30 bg-blue-500/20 text-blue-200";
 
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);
@@ -69,7 +124,7 @@ export default function Navigation() {
 
         {/* Nav links */}
         <nav className="flex-1 py-4 space-y-1 px-3">
-          {NAV_ITEMS.map((item) => {
+          {navItems.map((item) => {
             const active = isActive(item.href);
             return (
               <Link
@@ -89,8 +144,26 @@ export default function Navigation() {
         </nav>
 
         {/* Footer */}
-        <div className="px-5 py-4 border-t border-white/10 text-xs text-gray-400">
-          BuilderPro v0.1
+        <div className="px-3 py-4 border-t border-white/10 space-y-2">
+          <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2">
+            <p className="text-[11px] uppercase tracking-wide text-gray-400">Signed in as</p>
+            <p className="mt-1 truncate text-sm font-medium text-white">{currentUser?.email ?? "builder@pro"}</p>
+            <span className={`mt-2 inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${roleBadgeClasses}`}>
+              {roleLabel}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={signOut}
+            disabled={isSigningOut}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-300 hover:bg-white/10 hover:text-white disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16 17l5-5m0 0l-5-5m5 5H9m4 5v1a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h5a2 2 0 012 2v1" />
+            </svg>
+            {isSigningOut ? "Signing out..." : "Sign Out"}
+          </button>
+          <div className="px-2 text-xs text-gray-400">BuilderPro v0.1</div>
         </div>
       </aside>
 
@@ -117,7 +190,7 @@ export default function Navigation() {
       {/* Mobile dropdown */}
       {mobileOpen && (
         <div className="md:hidden fixed top-14 inset-x-0 bg-[#2d3748] border-t border-white/10 z-30 py-2 px-3 space-y-1 shadow-lg">
-          {NAV_ITEMS.map((item) => {
+          {navItems.map((item) => {
             const active = isActive(item.href);
             return (
               <Link
@@ -135,6 +208,20 @@ export default function Navigation() {
               </Link>
             );
           })}
+          <button
+            type="button"
+            onClick={() => {
+              setMobileOpen(false);
+              void signOut();
+            }}
+            disabled={isSigningOut}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-300 hover:bg-white/10 hover:text-white disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16 17l5-5m0 0l-5-5m5 5H9m4 5v1a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h5a2 2 0 012 2v1" />
+            </svg>
+            {isSigningOut ? "Signing out..." : "Sign Out"}
+          </button>
         </div>
       )}
     </>

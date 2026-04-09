@@ -11,24 +11,47 @@ export type UUID = string;
 /** ISO-8601 timestamp string */
 export type ISODateString = string;
 
+export type WorkspaceRole = "admin" | "user";
+
 // ─── User ────────────────────────────────────────────────────
 export interface User {
   id: UUID;
   email: string;
   full_name: string | null;
-  role: "admin" | "user";
+  role: WorkspaceRole;
   created_at: ISODateString;
 }
 
 export interface UserCreate {
   email: string;
   full_name?: string | null;
-  role?: "admin" | "user";
+  role?: WorkspaceRole;
+}
+
+export interface WorkspaceMember {
+  id: UUID;
+  user_id: UUID;
+  email: string;
+  full_name: string | null;
+  role: WorkspaceRole;
+  created_at: ISODateString;
+}
+
+export interface AuditLogEntry {
+  id: UUID;
+  action: string;
+  resource_type: string;
+  resource_id: string | null;
+  user_id: UUID | null;
+  actor_email: string | null;
+  details: Record<string, unknown> | null;
+  created_at: ISODateString;
 }
 
 // ─── Customer ────────────────────────────────────────────────
 export interface Customer {
   id: UUID;
+  workspace_id?: UUID;
   name: string;
   phone: string | null;
   email: string | null;
@@ -48,6 +71,7 @@ export interface CustomerCreate {
 // ─── Vendor ──────────────────────────────────────────────────
 export interface Vendor {
   id: UUID;
+  workspace_id?: UUID;
   name: string;
   phone: string | null;
   email: string | null;
@@ -67,6 +91,7 @@ export interface VendorCreate {
 // ─── Material ────────────────────────────────────────────────
 export interface Material {
   id: UUID;
+  workspace_id?: UUID;
   name: string;
   category: string | null;
   unit_type: string;
@@ -95,6 +120,8 @@ export interface MaterialCreate {
 }
 
 // ─── Project Item (line item in a record/estimate) ───────────
+export type OrderStatus = "draft" | "ordered" | "received" | "cancelled";
+
 export interface ProjectItem {
   id: UUID;
   project_id: UUID;
@@ -105,7 +132,12 @@ export interface ProjectItem {
   waste_pct: number;
   total_qty: number;
   line_subtotal: number;
+  order_status: OrderStatus;
+  po_number: string | null;
+  purchase_notes: string | null;
   notes: string | null;
+  ordered_at: ISODateString | null;
+  received_at: ISODateString | null;
   created_at: ISODateString;
   updated_at: ISODateString;
 }
@@ -116,6 +148,9 @@ export interface ProjectItemCreate {
   unit_type: string;
   unit_cost: number;
   waste_pct?: number;
+  order_status?: OrderStatus;
+  po_number?: string | null;
+  purchase_notes?: string | null;
   notes?: string | null;
 }
 
@@ -124,6 +159,7 @@ export type ProjectStatus = "draft" | "active" | "closed";
 
 export interface Project {
   id: UUID;
+  workspace_id?: UUID;
   name: string;
   customer_id: UUID;
   status: ProjectStatus;

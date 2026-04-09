@@ -10,7 +10,7 @@ import { formatCurrency } from "@/lib/format";
  * and quick-action links, styled in the HubSpot card pattern.
  */
 export function Dashboard() {
-  const { materials, vendors, customers, projects } = useStore();
+  const { materials, vendors, projects } = useStore();
 
   /** Aggregate metrics derived from current state. */
   const stats = useMemo(() => {

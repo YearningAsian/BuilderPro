@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import { OrdersList } from "@/components/Orders/OrdersList";
 
 export default function OrdersPage() {
-  redirect("/projects");
+  return <OrdersList />;
 }

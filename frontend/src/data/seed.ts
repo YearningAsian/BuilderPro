@@ -13,6 +13,17 @@ import type {
   ProjectItem,
 } from "@/types";
 
+const DEMO_WORKSPACE_ID = "00000000-0000-0000-0000-000000000001";
+const withWorkspace = <T extends object>(record: T) => ({ workspace_id: DEMO_WORKSPACE_ID, ...record });
+const withOrderStatus = <T extends object>(item: T) => ({
+  order_status: "draft" as const,
+  po_number: null,
+  purchase_notes: null,
+  ordered_at: null,
+  received_at: null,
+  ...item,
+});
+
 // ─── Vendors ─────────────────────────────────────────────────
 export const SEED_VENDORS: Vendor[] = [
   {
@@ -60,7 +71,7 @@ export const SEED_VENDORS: Vendor[] = [
     notes: null,
     created_at: "2026-02-10T14:00:00Z",
   },
-];
+].map(withWorkspace);
 
 // ─── Customers ───────────────────────────────────────────────
 export const SEED_CUSTOMERS: Customer[] = [
@@ -91,7 +102,7 @@ export const SEED_CUSTOMERS: Customer[] = [
     notes: null,
     created_at: "2026-02-01T12:00:00Z",
   },
-];
+].map(withWorkspace);
 
 // ─── Materials (hardcoded catalog) ───────────────────────────
 export const SEED_MATERIALS: Material[] = [
@@ -372,7 +383,7 @@ export const SEED_PROJECT_ITEMS: ProjectItem[] = [
     created_at: "2026-03-01T09:00:00Z",
     updated_at: "2026-03-01T09:00:00Z",
   },
-];
+].map(withOrderStatus);
 
 export const SEED_PROJECTS: Project[] = [
   {
@@ -411,7 +422,13 @@ export const SEED_PROJECTS: Project[] = [
     updated_at: "2026-03-12T12:00:00Z",
     items: [],
   },
-];
+].map(
+  (project): Project => ({
+    workspace_id: DEMO_WORKSPACE_ID,
+    ...project,
+    status: project.status as Project["status"],
+  }),
+);
 
 // ─── Material categories for filtering ───────────────────────
 export const MATERIAL_CATEGORIES = [
