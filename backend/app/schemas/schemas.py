@@ -166,6 +166,10 @@ class ProjectItemBase(BaseModel):
     order_status: Literal["draft", "ordered", "received", "cancelled"] = "draft"
     po_number: Optional[str] = None
     purchase_notes: Optional[str] = None
+    expected_delivery_at: Optional[datetime] = None
+    carrier: Optional[str] = None
+    tracking_number: Optional[str] = None
+    tracking_url: Optional[str] = None
     notes: Optional[str] = None
     ordered_at: Optional[datetime] = None
     received_at: Optional[datetime] = None
@@ -180,6 +184,10 @@ class ProjectItemCreate(BaseModel):
     order_status: Literal["draft", "ordered", "received", "cancelled"] = "draft"
     po_number: Optional[str] = None
     purchase_notes: Optional[str] = None
+    expected_delivery_at: Optional[datetime] = None
+    carrier: Optional[str] = None
+    tracking_number: Optional[str] = None
+    tracking_url: Optional[str] = None
     notes: Optional[str] = None
 
 
@@ -190,6 +198,10 @@ class ProjectItemUpdate(BaseModel):
     order_status: Optional[Literal["draft", "ordered", "received", "cancelled"]] = None
     po_number: Optional[str] = None
     purchase_notes: Optional[str] = None
+    expected_delivery_at: Optional[datetime] = None
+    carrier: Optional[str] = None
+    tracking_number: Optional[str] = None
+    tracking_url: Optional[str] = None
     notes: Optional[str] = None
 
 

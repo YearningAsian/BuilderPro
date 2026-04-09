@@ -319,6 +319,19 @@ def _register_supabase_user_with_session(email: str, password: str, full_name: s
             return _create_local_access_token(email), token_type, False
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many signup attempts. Please try again shortly.")
 
+    def should_use_local_fallback(exc: HTTPException) -> bool:
+        if exc.status_code in {
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status.HTTP_502_BAD_GATEWAY,
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            status.HTTP_504_GATEWAY_TIMEOUT,
+        }:
+            return True
+
+        detail = str(exc.detail).lower()
+        return "unable to reach supabase auth service" in detail
+
     try:
         _supabase_request(
             "POST",
@@ -332,7 +345,7 @@ def _register_supabase_user_with_session(email: str, password: str, full_name: s
             api_key=SUPABASE_ADMIN_KEY,
         )
     except HTTPException as exc:
-        if exc.status_code == status.HTTP_429_TOO_MANY_REQUESTS:
+        if should_use_local_fallback(exc):
             return local_fallback_session()
         if exc.status_code not in {401, 403, 404}:
             raise
@@ -348,7 +361,7 @@ def _register_supabase_user_with_session(email: str, password: str, full_name: s
                 },
             )
         except HTTPException as fallback_exc:
-            if fallback_exc.status_code == status.HTTP_429_TOO_MANY_REQUESTS:
+            if should_use_local_fallback(fallback_exc):
                 return local_fallback_session()
             raise
 
@@ -359,7 +372,7 @@ def _register_supabase_user_with_session(email: str, password: str, full_name: s
             payload={"email": email, "password": password},
         )
     except HTTPException as exc:
-        if exc.status_code == status.HTTP_429_TOO_MANY_REQUESTS:
+        if should_use_local_fallback(exc):
             return local_fallback_session()
         if exc.status_code in {400, 401} and "confirm" in str(exc.detail).lower():
             return None, token_type, True

@@ -119,8 +119,19 @@ if [ -z "${DATABASE_URL:-}" ] && [ ! -f ".env" ]; then
   BACKEND_ENV+=("DATABASE_URL=sqlite:///./builderpro.db")
 fi
 
+FRONTEND_ORIGIN="http://localhost:$FRONTEND_PORT"
+if [ -n "${ALLOWED_ORIGINS:-}" ]; then
+  BACKEND_ENV+=("ALLOWED_ORIGINS=${ALLOWED_ORIGINS},${FRONTEND_ORIGIN}")
+else
+  BACKEND_ENV+=("ALLOWED_ORIGINS=${FRONTEND_ORIGIN}")
+fi
+
 echo "Starting backend on http://localhost:$BACKEND_PORT ..."
-env "${BACKEND_ENV[@]}" "$PYTHON_BIN" -m uvicorn app.main:app --reload --host 0.0.0.0 --port "$BACKEND_PORT" >"$BACKEND_LOG" 2>&1 &
+if [ ${#BACKEND_ENV[@]} -gt 0 ]; then
+  env "${BACKEND_ENV[@]}" "$PYTHON_BIN" -m uvicorn app.main:app --reload --host 0.0.0.0 --port "$BACKEND_PORT" >"$BACKEND_LOG" 2>&1 &
+else
+  "$PYTHON_BIN" -m uvicorn app.main:app --reload --host 0.0.0.0 --port "$BACKEND_PORT" >"$BACKEND_LOG" 2>&1 &
+fi
 BACKEND_PID=$!
 
 cleanup() {
@@ -151,4 +162,4 @@ echo "Tip: override ports with FRONTEND_PORT=3000 or BACKEND_PORT=8001 if needed
 echo "Press Ctrl+C to stop both services."
 
 cd "$FRONTEND_DIR"
-npm run dev -- --port "$FRONTEND_PORT"
+NEXT_PUBLIC_API_URL="http://localhost:$BACKEND_PORT/api" npm run dev -- --port "$FRONTEND_PORT"

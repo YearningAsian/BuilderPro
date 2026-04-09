@@ -8,6 +8,40 @@ import type { OrderStatus, ProjectStatus } from "@/types";
 
 type ProcurementState = "ready" | "needs-vendor" | "planning" | "ordered" | "closed";
 
+type OrderRow = {
+  id: string;
+  projectId: string;
+  projectName: string;
+  materialId: string;
+  materialName: string;
+  vendorId: string | null;
+  vendorName: string;
+  vendorEmail: string | null;
+  orderStatus: OrderStatus;
+  procurementState: ProcurementState;
+  status: ProjectStatus;
+  quantityLabel: string;
+  total: number;
+  updatedAt: string;
+  orderedAt: string | null;
+  receivedAt: string | null;
+  poNumber: string;
+  purchaseNotes: string;
+  notes: string | null;
+};
+
+type VendorBatch = {
+  vendorId: string;
+  vendorName: string;
+  vendorEmail: string | null;
+  rows: OrderRow[];
+  readyRows: OrderRow[];
+  orderedRows: OrderRow[];
+  receivedRows: OrderRow[];
+  spend: number;
+  projectCount: number;
+};
+
 const STATUS_STYLES: Record<ProjectStatus, string> = {
   active: "bg-green-100 text-green-700",
   draft: "bg-yellow-100 text-yellow-700",
@@ -31,8 +65,12 @@ export function OrdersList() {
   const [projectFilter, setProjectFilter] = useState<string>("all");
   const [vendorFilter, setVendorFilter] = useState<string>("all");
   const [savingItemId, setSavingItemId] = useState<string | null>(null);
+  const [savingBatchVendorId, setSavingBatchVendorId] = useState<string | null>(null);
+  const [vendorPoNumbers, setVendorPoNumbers] = useState<Record<string, string>>({});
+  const [batchStatusMessage, setBatchStatusMessage] = useState<string>("");
+  const [batchErrorMessage, setBatchErrorMessage] = useState<string>("");
 
-  const orderRows = useMemo(() => {
+  const orderRows = useMemo<OrderRow[]>(() => {
     return projects
       .flatMap((project) =>
         project.items.map((item) => {
@@ -60,7 +98,9 @@ export function OrdersList() {
             projectName: project.name,
             materialId: item.material_id,
             materialName: material?.name ?? "Unknown material",
+            vendorId: vendor?.id ?? null,
             vendorName,
+            vendorEmail: vendor?.email ?? null,
             orderStatus,
             procurementState,
             status: project.status,
@@ -124,6 +164,42 @@ export function OrdersList() {
     [filteredRows],
   );
 
+  const vendorBatches = useMemo<VendorBatch[]>(() => {
+    const batchMap = new Map<string, VendorBatch>();
+
+    for (const row of filteredRows) {
+      if (!row.vendorId) continue;
+
+      const existing = batchMap.get(row.vendorId);
+      if (existing) {
+        existing.rows.push(row);
+        existing.spend += row.total;
+        continue;
+      }
+
+      batchMap.set(row.vendorId, {
+        vendorId: row.vendorId,
+        vendorName: row.vendorName,
+        vendorEmail: row.vendorEmail,
+        rows: [row],
+        readyRows: [],
+        orderedRows: [],
+        receivedRows: [],
+        spend: row.total,
+        projectCount: 0,
+      });
+    }
+
+    for (const batch of batchMap.values()) {
+      batch.readyRows = batch.rows.filter((row) => row.procurementState === "ready");
+      batch.orderedRows = batch.rows.filter((row) => row.orderStatus === "ordered");
+      batch.receivedRows = batch.rows.filter((row) => row.orderStatus === "received");
+      batch.projectCount = new Set(batch.rows.map((row) => row.projectId)).size;
+    }
+
+    return Array.from(batchMap.values()).sort((a, b) => a.vendorName.localeCompare(b.vendorName));
+  }, [filteredRows]);
+
   async function handleOrderPatch(
     projectId: string,
     itemId: string,
@@ -137,6 +213,93 @@ export function OrdersList() {
     } finally {
       setSavingItemId((current) => (current === itemId ? null : current));
     }
+  }
+
+  async function handleBatchStatusUpdate(
+    vendorId: string,
+    vendorName: string,
+    rows: OrderRow[],
+    nextStatus: OrderStatus,
+  ) {
+    if (rows.length === 0) return;
+
+    setBatchErrorMessage("");
+    setBatchStatusMessage("");
+    setSavingBatchVendorId(vendorId);
+
+    const poNumber = vendorPoNumbers[vendorId]?.trim() ?? "";
+
+    try {
+      await Promise.all(
+        rows.map((row) => {
+          const patch: Partial<{ order_status: OrderStatus; po_number: string | null }> = {
+            order_status: nextStatus,
+          };
+
+          if (nextStatus === "ordered" && poNumber) {
+            patch.po_number = poNumber;
+          }
+
+          return updateProjectItem(row.projectId, row.id, patch);
+        }),
+      );
+
+      const actionLabel = nextStatus === "ordered" ? "ordered" : nextStatus === "received" ? "received" : nextStatus;
+      setBatchStatusMessage(`Updated ${rows.length} line(s) for ${vendorName} to ${actionLabel}.`);
+    } catch (error) {
+      setBatchErrorMessage(
+        error instanceof Error ? error.message : `Unable to update batch for ${vendorName}.`,
+      );
+    } finally {
+      setSavingBatchVendorId((current) => (current === vendorId ? null : current));
+    }
+  }
+
+  function exportVendorBatchCsv(batch: VendorBatch) {
+    const escapeCell = (value: string) => `"${value.replace(/"/g, '""')}"`;
+
+    const header = [
+      "vendor",
+      "vendor_email",
+      "project",
+      "material",
+      "status",
+      "order_status",
+      "quantity",
+      "line_total",
+      "po_number",
+      "purchase_notes",
+      "updated_at",
+      "ordered_at",
+      "received_at",
+    ];
+
+    const rows = batch.rows.map((row) => [
+      escapeCell(batch.vendorName),
+      escapeCell(batch.vendorEmail ?? ""),
+      escapeCell(row.projectName),
+      escapeCell(row.materialName),
+      escapeCell(row.status),
+      escapeCell(row.orderStatus),
+      escapeCell(row.quantityLabel),
+      row.total.toFixed(2),
+      escapeCell(row.poNumber),
+      escapeCell(row.purchaseNotes),
+      escapeCell(row.updatedAt),
+      escapeCell(row.orderedAt ?? ""),
+      escapeCell(row.receivedAt ?? ""),
+    ]);
+
+    const csv = [header.join(","), ...rows.map((entry) => entry.join(","))].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${batch.vendorName.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-orders.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
   }
 
   return (
@@ -244,6 +407,115 @@ export function OrdersList() {
           </label>
         </div>
       </div>
+
+      <section className="card p-4 space-y-4">
+        <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-900">Vendor order batches</h2>
+            <p className="text-sm text-gray-500">
+              Move ready lines to ordered in one step per vendor, then close delivery as received when materials arrive.
+            </p>
+          </div>
+          <p className="text-sm text-gray-500">{vendorBatches.length} vendor batch(es) in current filter</p>
+        </div>
+
+        {batchErrorMessage && (
+          <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            {batchErrorMessage}
+          </p>
+        )}
+
+        {batchStatusMessage && (
+          <p className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
+            {batchStatusMessage}
+          </p>
+        )}
+
+        {vendorBatches.length === 0 ? (
+          <p className="text-sm text-gray-500">Assign vendors and add project line items to unlock vendor batching.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="bp-table">
+              <thead>
+                <tr>
+                  <th>Vendor</th>
+                  <th>Projects</th>
+                  <th>Ready</th>
+                  <th>Ordered</th>
+                  <th>Received</th>
+                  <th className="text-right">Batch total</th>
+                  <th>Batch actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {vendorBatches.map((batch) => {
+                  const isSavingBatch = savingBatchVendorId === batch.vendorId;
+                  return (
+                    <tr key={batch.vendorId}>
+                      <td>
+                        <div className="space-y-1">
+                          <p className="font-medium text-gray-900">{batch.vendorName}</p>
+                          <p className="text-xs text-gray-500">{batch.vendorEmail || "No vendor email on file"}</p>
+                        </div>
+                      </td>
+                      <td className="text-gray-600">{batch.projectCount}</td>
+                      <td className="text-gray-600">{batch.readyRows.length}</td>
+                      <td className="text-gray-600">{batch.orderedRows.length}</td>
+                      <td className="text-gray-600">{batch.receivedRows.length}</td>
+                      <td className="text-right font-mono font-semibold text-gray-900">{formatCurrency(batch.spend)}</td>
+                      <td>
+                        <div className="min-w-72 space-y-2">
+                          <input
+                            type="text"
+                            value={vendorPoNumbers[batch.vendorId] ?? ""}
+                            placeholder="Default PO number for batch"
+                            onChange={(event) => {
+                              const nextValue = event.target.value;
+                              setVendorPoNumbers((prev) => ({ ...prev, [batch.vendorId]: nextValue }));
+                            }}
+                            disabled={isSavingBatch}
+                            className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1 text-sm text-gray-700 disabled:cursor-not-allowed disabled:bg-gray-100"
+                          />
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                void handleBatchStatusUpdate(batch.vendorId, batch.vendorName, batch.readyRows, "ordered");
+                              }}
+                              disabled={isSavingBatch || batch.readyRows.length === 0}
+                              className="rounded-lg bg-orange-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-orange-600 disabled:cursor-not-allowed disabled:bg-orange-300"
+                            >
+                              Mark ready as ordered ({batch.readyRows.length})
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                void handleBatchStatusUpdate(batch.vendorId, batch.vendorName, batch.orderedRows, "received");
+                              }}
+                              disabled={isSavingBatch || batch.orderedRows.length === 0}
+                              className="rounded-lg border border-sky-300 px-3 py-1.5 text-xs font-semibold text-sky-700 hover:bg-sky-50 disabled:cursor-not-allowed disabled:border-sky-100 disabled:text-sky-300"
+                            >
+                              Mark ordered as received ({batch.orderedRows.length})
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => exportVendorBatchCsv(batch)}
+                              disabled={isSavingBatch || batch.rows.length === 0}
+                              className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-300"
+                            >
+                              Export CSV
+                            </button>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
 
       <div className="card overflow-x-auto">
         <table className="bp-table">
