@@ -205,6 +205,7 @@ export default function SignInPage() {
                 className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm text-gray-900 bg-white outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-400"
                 aria-invalid={Boolean(errors.email)}
                 aria-describedby={errors.email ? "email-error" : undefined}
+                suppressHydrationWarning
               />
               {errors.email && (
                 <p id="email-error" className="mt-1 text-sm text-red-600">
@@ -229,6 +230,7 @@ export default function SignInPage() {
                   className="w-full rounded-lg border border-gray-300 px-3 py-2.5 pr-14 text-sm text-gray-900 bg-white outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-400"
                   aria-invalid={Boolean(errors.password)}
                   aria-describedby={errors.password ? "password-error" : undefined}
+                  suppressHydrationWarning
                 />
                 <button
                   type="button"
