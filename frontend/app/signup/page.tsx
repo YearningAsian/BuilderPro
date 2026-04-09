@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useMemo, useState } from "react";
+import { persistSession } from "@/lib/auth";
 
 type FormErrors = {
   fullName?: string;
@@ -13,6 +14,7 @@ type FormErrors = {
   submit?: string;
 };
 
+// RFC 5322 simplified email validation
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function SignUpPage() {
@@ -108,20 +110,16 @@ export default function SignUpPage() {
       const normalizedEmail = email.trim().toLowerCase();
 
       if (accessToken) {
-        const sessionData = JSON.stringify({
+        const sessionData = {
           email: normalizedEmail,
           role,
           accessToken,
           tokenType: payload?.token_type || "bearer",
           workspaceId,
           workspaceName,
-          signedInAt: new Date().toISOString(),
-        });
+        };
 
-        localStorage.setItem("builderpro_session", sessionData);
-        sessionStorage.removeItem("builderpro_session");
-        document.cookie = `builderpro_auth=1; Path=/; Max-Age=${60 * 60 * 24 * 14}; SameSite=Lax`;
-        document.cookie = `builderpro_role=${role}; Path=/; Max-Age=${60 * 60 * 24 * 14}; SameSite=Lax`;
+        persistSession(sessionData, true);
 
         router.push("/");
         return;

@@ -1,10 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useStore } from "@/hooks/useStore";
 import { getActiveSession } from "@/lib/auth";
 import { formatDate, truncate } from "@/lib/format";
 import type { Vendor, VendorCreate } from "@/types";
+import { vendorCreateSchema } from "@/types/schemas";
 
 type VendorFormState = {
   name: string;
@@ -47,6 +49,7 @@ export function VendorsList() {
   const [query, setQuery] = useState("");
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editingVendorId, setEditingVendorId] = useState<string | null>(null);
+  const [selectedVendorId, setSelectedVendorId] = useState<string | null>(null);
   const [form, setForm] = useState<VendorFormState>(EMPTY_FORM);
   const [formError, setFormError] = useState("");
   const [formStatus, setFormStatus] = useState("");
@@ -80,6 +83,10 @@ export function VendorsList() {
     () => new Set(materials.map((material) => material.default_vendor_id).filter(Boolean)).size,
     [materials],
   );
+  const selectedVendor = useMemo(
+    () => (selectedVendorId ? vendors.find((vendor) => vendor.id === selectedVendorId) ?? null : null),
+    [vendors, selectedVendorId],
+  );
 
   const openCreateForm = () => {
     setEditingVendorId(null);
@@ -109,11 +116,6 @@ export function VendorsList() {
     setFormError("");
     setFormStatus("");
 
-    if (!form.name.trim()) {
-      setFormError("Vendor name is required.");
-      return;
-    }
-
     const payload: VendorCreate = {
       name: form.name.trim(),
       email: form.email.trim() || null,
@@ -121,16 +123,22 @@ export function VendorsList() {
       address: form.address.trim() || null,
       notes: form.notes.trim() || null,
     };
+    const validated = vendorCreateSchema.safeParse(payload);
+    if (!validated.success) {
+      setFormError(validated.error.issues[0]?.message ?? "Please correct the vendor details.");
+      return;
+    }
 
     setIsSaving(true);
     try {
       if (editingVendorId) {
-        await updateVendor(editingVendorId, payload);
+        await updateVendor(editingVendorId, validated.data);
         setFormStatus("Vendor updated successfully.");
       } else {
-        await createVendor(payload);
+        const created = await createVendor(validated.data);
         setFormStatus("Vendor created successfully.");
         setForm(EMPTY_FORM);
+        setSelectedVendorId(created.id);
       }
     } catch (error) {
       setFormError(error instanceof Error ? error.message : "Unable to save vendor.");
@@ -151,6 +159,9 @@ export function VendorsList() {
       setFormStatus(`${vendor.name} was removed.`);
       if (editingVendorId === vendor.id) {
         closeEditor();
+      }
+      if (selectedVendorId === vendor.id) {
+        setSelectedVendorId(null);
       }
     } catch (error) {
       setFormError(error instanceof Error ? error.message : "Unable to delete vendor.");
@@ -267,13 +278,14 @@ export function VendorsList() {
               <th>Address</th>
               <th>Materials</th>
               <th>Last added</th>
+              <th>Details</th>
               {isAdmin && <th>Action</th>}
             </tr>
           </thead>
           <tbody>
             {filteredVendors.length === 0 ? (
               <tr>
-                <td colSpan={isAdmin ? 6 : 5} className="py-12 text-center text-gray-500">
+                <td colSpan={isAdmin ? 7 : 6} className="py-12 text-center text-gray-500">
                   No vendors found yet.
                 </td>
               </tr>
@@ -284,7 +296,9 @@ export function VendorsList() {
                   <tr key={vendor.id}>
                     <td>
                       <div>
-                        <p className="font-medium text-gray-900">{vendor.name}</p>
+                        <Link href={`/vendors/${vendor.id}`} className="font-medium text-gray-900 hover:text-orange-600">
+                          {vendor.name}
+                        </Link>
                         <p className="text-xs text-gray-500">#{vendor.id.slice(0, 8)}</p>
                       </div>
                     </td>
@@ -302,6 +316,15 @@ export function VendorsList() {
                       </div>
                     </td>
                     <td className="text-sm text-gray-500">{formatDate(vendor.created_at)}</td>
+                    <td>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedVendorId(vendor.id)}
+                        className="rounded-md border border-orange-200 px-2.5 py-1 text-xs font-medium text-orange-700 hover:bg-orange-50"
+                      >
+                        View
+                      </button>
+                    </td>
                     {isAdmin && (
                       <td>
                         <div className="flex flex-wrap gap-2">
@@ -321,6 +344,94 @@ export function VendorsList() {
           </tbody>
         </table>
       </div>
+
+      {selectedVendor && (
+        <section className="card p-5 space-y-5">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">{selectedVendor.name} details</h2>
+              <p className="text-sm text-gray-600">
+                Review contact info, assigned materials, and purchasing notes for this vendor.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Link
+                href={`/vendors/${selectedVendor.id}`}
+                className="rounded-lg border border-orange-300 px-3 py-2 text-sm text-orange-700 hover:bg-orange-50"
+              >
+                Open full page
+              </Link>
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={() => openEditForm(selectedVendor)}
+                  className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  Edit vendor
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setSelectedVendorId(null)}
+                className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="space-y-3 rounded-lg border border-gray-200 p-4">
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-600">Contact details</h3>
+              <dl className="space-y-3 text-sm">
+                <div>
+                  <dt className="text-gray-500">Email</dt>
+                  <dd className="font-medium text-gray-900">{selectedVendor.email || "No email on file"}</dd>
+                </div>
+                <div>
+                  <dt className="text-gray-500">Phone</dt>
+                  <dd className="font-medium text-gray-900">{selectedVendor.phone || "No phone on file"}</dd>
+                </div>
+                <div>
+                  <dt className="text-gray-500">Address</dt>
+                  <dd className="font-medium text-gray-900">{selectedVendor.address || "No address on file"}</dd>
+                </div>
+                <div>
+                  <dt className="text-gray-500">Created</dt>
+                  <dd className="font-medium text-gray-900">{formatDate(selectedVendor.created_at)}</dd>
+                </div>
+              </dl>
+            </div>
+
+            <div className="space-y-3 rounded-lg border border-gray-200 p-4">
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-600">Assigned materials</h3>
+              {materials.filter((material) => material.default_vendor_id === selectedVendor.id).length === 0 ? (
+                <p className="text-sm text-gray-500">No materials linked to this vendor yet.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {materials
+                    .filter((material) => material.default_vendor_id === selectedVendor.id)
+                    .map((material) => (
+                      <li key={material.id} className="rounded-md border border-gray-100 bg-gray-50 p-3 text-sm">
+                        <p className="font-medium text-gray-900">{material.name}</p>
+                        <p className="text-xs text-gray-500">
+                          {material.category ?? "Uncategorized"} • {material.sku ?? "No SKU"}
+                        </p>
+                      </li>
+                    ))}
+                </ul>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-gray-200 p-4">
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-600">Notes</h3>
+            <p className="mt-2 text-sm text-gray-700 whitespace-pre-wrap">
+              {selectedVendor.notes || "No notes saved for this vendor."}
+            </p>
+          </div>
+        </section>
+      )}
     </div>
   );
 }

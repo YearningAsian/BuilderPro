@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useStore } from "@/hooks/useStore";
 import { formatCurrency, formatDate, truncate } from "@/lib/format";
+import { ordersApi } from "@/services/api";
 import type { OrderStatus, ProjectStatus } from "@/types";
 
 type ProcurementState = "ready" | "needs-vendor" | "planning" | "ordered" | "closed";
@@ -27,6 +28,10 @@ type OrderRow = {
   receivedAt: string | null;
   poNumber: string;
   purchaseNotes: string;
+  expectedDeliveryAt: string | null;
+  carrier: string;
+  trackingNumber: string;
+  trackingUrl: string;
   notes: string | null;
 };
 
@@ -40,6 +45,22 @@ type VendorBatch = {
   receivedRows: OrderRow[];
   spend: number;
   projectCount: number;
+};
+
+type ShipmentTimelineItem = {
+  id: string;
+  projectId: string;
+  projectName: string;
+  materialName: string;
+  vendorName: string;
+  orderStatus: OrderStatus;
+  expectedDeliveryAt: string | null;
+  orderedAt: string | null;
+  receivedAt: string | null;
+  trackingNumber: string;
+  trackingUrl: string;
+  carrier: string;
+  total: number;
 };
 
 const STATUS_STYLES: Record<ProjectStatus, string> = {
@@ -60,13 +81,17 @@ const STATUS_OPTIONS: Array<ProjectStatus | "all"> = ["all", "active", "draft", 
 const ORDER_STATUS_OPTIONS: OrderStatus[] = ["draft", "ordered", "received", "cancelled"];
 
 export function OrdersList() {
-  const { projects, getMaterialById, getVendorById, updateProjectItem } = useStore();
+  const { projects, getMaterialById, getVendorById, updateProjectItem, refreshData } = useStore();
   const [statusFilter, setStatusFilter] = useState<ProjectStatus | "all">("all");
   const [projectFilter, setProjectFilter] = useState<string>("all");
   const [vendorFilter, setVendorFilter] = useState<string>("all");
   const [savingItemId, setSavingItemId] = useState<string | null>(null);
   const [savingBatchVendorId, setSavingBatchVendorId] = useState<string | null>(null);
   const [vendorPoNumbers, setVendorPoNumbers] = useState<Record<string, string>>({});
+  const [vendorEtas, setVendorEtas] = useState<Record<string, string>>({});
+  const [vendorCarriers, setVendorCarriers] = useState<Record<string, string>>({});
+  const [vendorTrackingNumbers, setVendorTrackingNumbers] = useState<Record<string, string>>({});
+  const [vendorTrackingUrls, setVendorTrackingUrls] = useState<Record<string, string>>({});
   const [batchStatusMessage, setBatchStatusMessage] = useState<string>("");
   const [batchErrorMessage, setBatchErrorMessage] = useState<string>("");
 
@@ -111,6 +136,10 @@ export function OrdersList() {
             receivedAt: item.received_at,
             poNumber: item.po_number ?? "",
             purchaseNotes: item.purchase_notes ?? "",
+            expectedDeliveryAt: item.expected_delivery_at,
+            carrier: item.carrier ?? "",
+            trackingNumber: item.tracking_number ?? "",
+            trackingUrl: item.tracking_url ?? "",
             notes: item.notes,
           };
         }),
@@ -200,10 +229,49 @@ export function OrdersList() {
     return Array.from(batchMap.values()).sort((a, b) => a.vendorName.localeCompare(b.vendorName));
   }, [filteredRows]);
 
+  const shipmentTimeline = useMemo<ShipmentTimelineItem[]>(() => {
+    return filteredRows
+      .filter(
+        (row) =>
+          row.orderStatus === "ordered" ||
+          row.orderStatus === "received" ||
+          row.expectedDeliveryAt !== null ||
+          Boolean(row.trackingNumber),
+      )
+      .map((row) => ({
+        id: row.id,
+        projectId: row.projectId,
+        projectName: row.projectName,
+        materialName: row.materialName,
+        vendorName: row.vendorName,
+        orderStatus: row.orderStatus,
+        expectedDeliveryAt: row.expectedDeliveryAt,
+        orderedAt: row.orderedAt,
+        receivedAt: row.receivedAt,
+        trackingNumber: row.trackingNumber,
+        trackingUrl: row.trackingUrl,
+        carrier: row.carrier,
+        total: row.total,
+      }))
+      .sort((a, b) => {
+        const aTime = new Date(a.expectedDeliveryAt || a.orderedAt || a.receivedAt || 0).getTime();
+        const bTime = new Date(b.expectedDeliveryAt || b.orderedAt || b.receivedAt || 0).getTime();
+        return bTime - aTime;
+      });
+  }, [filteredRows]);
+
   async function handleOrderPatch(
     projectId: string,
     itemId: string,
-    patch: Partial<{ order_status: OrderStatus; po_number: string | null; purchase_notes: string | null }>,
+    patch: Partial<{
+      order_status: OrderStatus;
+      po_number: string | null;
+      purchase_notes: string | null;
+      expected_delivery_at: string | null;
+      carrier: string | null;
+      tracking_number: string | null;
+      tracking_url: string | null;
+    }>,
   ) {
     try {
       setSavingItemId(itemId);
@@ -215,37 +283,58 @@ export function OrdersList() {
     }
   }
 
+  function toIsoOrNull(value: string): string | null {
+    if (!value.trim()) return null;
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return parsed.toISOString();
+  }
+
+  function toDatetimeLocalValue(value: string | null): string {
+    if (!value) return "";
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return "";
+
+    const offsetMs = parsed.getTimezoneOffset() * 60 * 1000;
+    const local = new Date(parsed.getTime() - offsetMs);
+    return local.toISOString().slice(0, 16);
+  }
+
   async function handleBatchStatusUpdate(
     vendorId: string,
     vendorName: string,
-    rows: OrderRow[],
+    fromStatus: "ready" | "ordered" | "received" | "draft" | "cancelled",
     nextStatus: OrderStatus,
   ) {
-    if (rows.length === 0) return;
+    const targetRows = vendorBatches.find((batch) => batch.vendorId === vendorId)?.rows ?? [];
+    if (targetRows.length === 0) return;
 
     setBatchErrorMessage("");
     setBatchStatusMessage("");
     setSavingBatchVendorId(vendorId);
 
     const poNumber = vendorPoNumbers[vendorId]?.trim() ?? "";
+    const expectedDeliveryAt = toIsoOrNull(vendorEtas[vendorId] ?? "");
+    const carrier = vendorCarriers[vendorId]?.trim() ?? "";
+    const trackingNumber = vendorTrackingNumbers[vendorId]?.trim() ?? "";
+    const trackingUrl = vendorTrackingUrls[vendorId]?.trim() ?? "";
 
     try {
-      await Promise.all(
-        rows.map((row) => {
-          const patch: Partial<{ order_status: OrderStatus; po_number: string | null }> = {
-            order_status: nextStatus,
-          };
+      const response = await ordersApi.bulkUpdateStatus({
+        vendor_id: vendorId,
+        from_status: fromStatus,
+        to_status: nextStatus,
+        po_number: poNumber || null,
+        expected_delivery_at: expectedDeliveryAt,
+        carrier: carrier || null,
+        tracking_number: trackingNumber || null,
+        tracking_url: trackingUrl || null,
+      });
 
-          if (nextStatus === "ordered" && poNumber) {
-            patch.po_number = poNumber;
-          }
-
-          return updateProjectItem(row.projectId, row.id, patch);
-        }),
-      );
+      await refreshData();
 
       const actionLabel = nextStatus === "ordered" ? "ordered" : nextStatus === "received" ? "received" : nextStatus;
-      setBatchStatusMessage(`Updated ${rows.length} line(s) for ${vendorName} to ${actionLabel}.`);
+      setBatchStatusMessage(`Updated ${response.updated_count} line(s) for ${vendorName} to ${actionLabel}.`);
     } catch (error) {
       setBatchErrorMessage(
         error instanceof Error ? error.message : `Unable to update batch for ${vendorName}.`,
@@ -300,6 +389,29 @@ export function OrdersList() {
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
+  }
+
+  async function openVendorPoDocument(vendorId: string, vendorName: string, includeStatus: "ready" | "ordered") {
+    setBatchErrorMessage("");
+
+    try {
+      const html = await ordersApi.vendorPoDocumentHtml(vendorId, includeStatus);
+      const popup = window.open("", "_blank", "noopener,noreferrer");
+      if (!popup) {
+        setBatchErrorMessage("Popup blocked. Allow popups and try again to open the PO document.");
+        return;
+      }
+
+      popup.document.open();
+      popup.document.write(html);
+      popup.document.close();
+      popup.document.title = `Purchase Order - ${vendorName}`;
+      popup.focus();
+    } catch (error) {
+      setBatchErrorMessage(
+        error instanceof Error ? error.message : `Unable to generate purchase order document for ${vendorName}.`,
+      );
+    }
   }
 
   return (
@@ -476,11 +588,58 @@ export function OrdersList() {
                             disabled={isSavingBatch}
                             className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1 text-sm text-gray-700 disabled:cursor-not-allowed disabled:bg-gray-100"
                           />
+                          <div className="grid gap-2 md:grid-cols-2">
+                            <input
+                              type="datetime-local"
+                              value={vendorEtas[batch.vendorId] ?? ""}
+                              onChange={(event) => {
+                                const nextValue = event.target.value;
+                                setVendorEtas((prev) => ({ ...prev, [batch.vendorId]: nextValue }));
+                              }}
+                              disabled={isSavingBatch}
+                              className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1 text-sm text-gray-700 disabled:cursor-not-allowed disabled:bg-gray-100"
+                            />
+                            <input
+                              type="text"
+                              value={vendorCarriers[batch.vendorId] ?? ""}
+                              placeholder="Carrier"
+                              onChange={(event) => {
+                                const nextValue = event.target.value;
+                                setVendorCarriers((prev) => ({ ...prev, [batch.vendorId]: nextValue }));
+                              }}
+                              disabled={isSavingBatch}
+                              className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1 text-sm text-gray-700 disabled:cursor-not-allowed disabled:bg-gray-100"
+                            />
+                          </div>
+                          <div className="grid gap-2 md:grid-cols-2">
+                            <input
+                              type="text"
+                              value={vendorTrackingNumbers[batch.vendorId] ?? ""}
+                              placeholder="Tracking number"
+                              onChange={(event) => {
+                                const nextValue = event.target.value;
+                                setVendorTrackingNumbers((prev) => ({ ...prev, [batch.vendorId]: nextValue }));
+                              }}
+                              disabled={isSavingBatch}
+                              className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1 text-sm text-gray-700 disabled:cursor-not-allowed disabled:bg-gray-100"
+                            />
+                            <input
+                              type="url"
+                              value={vendorTrackingUrls[batch.vendorId] ?? ""}
+                              placeholder="Tracking URL"
+                              onChange={(event) => {
+                                const nextValue = event.target.value;
+                                setVendorTrackingUrls((prev) => ({ ...prev, [batch.vendorId]: nextValue }));
+                              }}
+                              disabled={isSavingBatch}
+                              className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1 text-sm text-gray-700 disabled:cursor-not-allowed disabled:bg-gray-100"
+                            />
+                          </div>
                           <div className="flex flex-wrap gap-2">
                             <button
                               type="button"
                               onClick={() => {
-                                void handleBatchStatusUpdate(batch.vendorId, batch.vendorName, batch.readyRows, "ordered");
+                                void handleBatchStatusUpdate(batch.vendorId, batch.vendorName, "ready", "ordered");
                               }}
                               disabled={isSavingBatch || batch.readyRows.length === 0}
                               className="rounded-lg bg-orange-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-orange-600 disabled:cursor-not-allowed disabled:bg-orange-300"
@@ -490,7 +649,7 @@ export function OrdersList() {
                             <button
                               type="button"
                               onClick={() => {
-                                void handleBatchStatusUpdate(batch.vendorId, batch.vendorName, batch.orderedRows, "received");
+                                void handleBatchStatusUpdate(batch.vendorId, batch.vendorName, "ordered", "received");
                               }}
                               disabled={isSavingBatch || batch.orderedRows.length === 0}
                               className="rounded-lg border border-sky-300 px-3 py-1.5 text-xs font-semibold text-sky-700 hover:bg-sky-50 disabled:cursor-not-allowed disabled:border-sky-100 disabled:text-sky-300"
@@ -505,6 +664,16 @@ export function OrdersList() {
                             >
                               Export CSV
                             </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                void openVendorPoDocument(batch.vendorId, batch.vendorName, "ready");
+                              }}
+                              disabled={isSavingBatch}
+                              className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-300"
+                            >
+                              Print ready PO / PDF
+                            </button>
                           </div>
                         </div>
                       </td>
@@ -513,6 +682,72 @@ export function OrdersList() {
                 })}
               </tbody>
             </table>
+          </div>
+        )}
+      </section>
+
+      <section className="card p-4 space-y-4">
+        <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-900">Shipment timeline</h2>
+            <p className="text-sm text-gray-500">
+              Track ordered and received lines with ETA, carrier, and tracking references.
+            </p>
+          </div>
+          <p className="text-sm text-gray-500">{shipmentTimeline.length} tracked shipment line(s)</p>
+        </div>
+
+        {shipmentTimeline.length === 0 ? (
+          <p className="text-sm text-gray-500">No shipment activity yet. Mark lines as ordered to populate the timeline.</p>
+        ) : (
+          <div className="space-y-3">
+            {shipmentTimeline.map((entry) => (
+              <div
+                key={entry.id}
+                className="rounded-xl border border-gray-200 bg-white px-4 py-3"
+              >
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div className="space-y-1">
+                    <p className="text-sm font-semibold text-gray-900">
+                      {entry.materialName} · {entry.projectName}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      Vendor: {entry.vendorName} · Status: {entry.orderStatus}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500">
+                      <span>{entry.orderedAt ? `Ordered ${formatDate(entry.orderedAt)}` : "Not ordered"}</span>
+                      <span>{entry.expectedDeliveryAt ? `ETA ${formatDate(entry.expectedDeliveryAt)}` : "ETA not set"}</span>
+                      <span>{entry.receivedAt ? `Received ${formatDate(entry.receivedAt)}` : "Awaiting receipt"}</span>
+                    </div>
+                  </div>
+
+                  <div className="text-right space-y-1">
+                    <p className="text-sm font-semibold text-gray-900">{formatCurrency(entry.total)}</p>
+                    <p className="text-xs text-gray-500">Carrier: {entry.carrier || "—"}</p>
+                    {entry.trackingUrl ? (
+                      <a
+                        href={entry.trackingUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs font-medium text-orange-600 hover:text-orange-700"
+                      >
+                        Track shipment {entry.trackingNumber ? `(${entry.trackingNumber})` : ""}
+                      </a>
+                    ) : (
+                      <p className="text-xs text-gray-400">
+                        Tracking {entry.trackingNumber || "not set"}
+                      </p>
+                    )}
+                    <Link
+                      href={`/projects/${entry.projectId}`}
+                      className="block text-xs font-medium text-orange-600 hover:text-orange-700"
+                    >
+                      Open project line
+                    </Link>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </section>
@@ -646,6 +881,58 @@ export function OrdersList() {
                           const nextValue = event.target.value.trim();
                           if (nextValue !== row.purchaseNotes) {
                             void handleOrderPatch(row.projectId, row.id, { purchase_notes: nextValue || null });
+                          }
+                        }}
+                        disabled={savingItemId === row.id}
+                        className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1 text-sm text-gray-700 disabled:cursor-not-allowed disabled:bg-gray-100"
+                      />
+                      <input
+                        type="datetime-local"
+                        defaultValue={toDatetimeLocalValue(row.expectedDeliveryAt)}
+                        onBlur={(event) => {
+                          const nextValue = toIsoOrNull(event.target.value);
+                          const currentValue = row.expectedDeliveryAt ?? null;
+                          if (nextValue !== currentValue) {
+                            void handleOrderPatch(row.projectId, row.id, { expected_delivery_at: nextValue });
+                          }
+                        }}
+                        disabled={savingItemId === row.id}
+                        className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1 text-sm text-gray-700 disabled:cursor-not-allowed disabled:bg-gray-100"
+                      />
+                      <input
+                        type="text"
+                        defaultValue={row.carrier}
+                        placeholder="Carrier"
+                        onBlur={(event) => {
+                          const nextValue = event.target.value.trim();
+                          if (nextValue !== row.carrier) {
+                            void handleOrderPatch(row.projectId, row.id, { carrier: nextValue || null });
+                          }
+                        }}
+                        disabled={savingItemId === row.id}
+                        className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1 text-sm text-gray-700 disabled:cursor-not-allowed disabled:bg-gray-100"
+                      />
+                      <input
+                        type="text"
+                        defaultValue={row.trackingNumber}
+                        placeholder="Tracking #"
+                        onBlur={(event) => {
+                          const nextValue = event.target.value.trim();
+                          if (nextValue !== row.trackingNumber) {
+                            void handleOrderPatch(row.projectId, row.id, { tracking_number: nextValue || null });
+                          }
+                        }}
+                        disabled={savingItemId === row.id}
+                        className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1 text-sm text-gray-700 disabled:cursor-not-allowed disabled:bg-gray-100"
+                      />
+                      <input
+                        type="url"
+                        defaultValue={row.trackingUrl}
+                        placeholder="Tracking URL"
+                        onBlur={(event) => {
+                          const nextValue = event.target.value.trim();
+                          if (nextValue !== row.trackingUrl) {
+                            void handleOrderPatch(row.projectId, row.id, { tracking_url: nextValue || null });
                           }
                         }}
                         disabled={savingItemId === row.id}

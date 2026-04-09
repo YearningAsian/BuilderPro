@@ -3,9 +3,11 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { getActiveSession, type BuilderProSession } from "@/lib/auth";
-import { formatDate } from "@/lib/format";
+import { formatCurrency, formatDate } from "@/lib/format";
 import { authApi } from "@/services/api";
-import type { AuditLogEntry, WorkspaceMember, WorkspaceRole } from "@/types";
+import type { AuditLogEntry, WorkspaceInviteSummary, WorkspaceMember, WorkspaceRole } from "@/types";
+
+type AuditFilter = "all" | "orders" | "members" | "invites" | "other";
 
 function persistWorkspaceDetails(
   currentSession: BuilderProSession,
@@ -44,6 +46,7 @@ export default function SettingsPage() {
   const [session, setSession] = useState<BuilderProSession | null>(null);
   const [workspaceId, setWorkspaceId] = useState("");
   const [workspaceName, setWorkspaceName] = useState("");
+  const [workspaceProfileName, setWorkspaceProfileName] = useState("");
   const [inviteEmail, setInviteEmail] = useState("");
   const [expiresInDays, setExpiresInDays] = useState(7);
   const [inviteLink, setInviteLink] = useState("");
@@ -52,19 +55,38 @@ export default function SettingsPage() {
   const [errorMessage, setErrorMessage] = useState("");
   const [copied, setCopied] = useState(false);
   const [isLoadingWorkspace, setIsLoadingWorkspace] = useState(false);
+  const [isSavingWorkspaceProfile, setIsSavingWorkspaceProfile] = useState(false);
+  const [isLoadingBillingSummary, setIsLoadingBillingSummary] = useState(false);
+  const [billingSummary, setBillingSummary] = useState<{
+    member_count: number;
+    material_count: number;
+    active_project_count: number;
+    draft_project_count: number;
+    monthly_estimate_total: number;
+    plan_name: string;
+  } | null>(null);
   const [isCreatingInvite, setIsCreatingInvite] = useState(false);
   const [members, setMembers] = useState<WorkspaceMember[]>([]);
+  const [pendingInvites, setPendingInvites] = useState<WorkspaceInviteSummary[]>([]);
   const [auditEvents, setAuditEvents] = useState<AuditLogEntry[]>([]);
   const [isLoadingMembers, setIsLoadingMembers] = useState(false);
+  const [isLoadingInvites, setIsLoadingInvites] = useState(false);
   const [isLoadingAuditEvents, setIsLoadingAuditEvents] = useState(false);
   const [memberActionId, setMemberActionId] = useState<string | null>(null);
+  const [inviteActionId, setInviteActionId] = useState<string | null>(null);
+  const [auditFilter, setAuditFilter] = useState<AuditFilter>("all");
 
   useEffect(() => {
     const activeSession = getActiveSession();
     setSession(activeSession);
     setWorkspaceId(activeSession?.workspaceId ?? "");
     setWorkspaceName(activeSession?.workspaceName ?? "");
+    setWorkspaceProfileName(activeSession?.workspaceName ?? "");
   }, []);
+
+  useEffect(() => {
+    setWorkspaceProfileName(workspaceName);
+  }, [workspaceName]);
 
   useEffect(() => {
     if (!session?.accessToken || (workspaceId && workspaceName)) {
@@ -118,7 +140,42 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (!session?.accessToken || !isAdmin || !workspaceId) {
+      setBillingSummary(null);
+      return;
+    }
+
+    let active = true;
+    async function loadBillingSummary() {
+      setIsLoadingBillingSummary(true);
+      try {
+        const summary = await authApi.getWorkspaceBillingSummary();
+        if (!active) return;
+        setBillingSummary(summary);
+      } catch (error) {
+        if (!active) return;
+        setErrorMessage(
+          error instanceof Error && error.message
+            ? error.message
+            : "Unable to load workspace billing summary.",
+        );
+      } finally {
+        if (active) {
+          setIsLoadingBillingSummary(false);
+        }
+      }
+    }
+
+    void loadBillingSummary();
+
+    return () => {
+      active = false;
+    };
+  }, [session?.accessToken, isAdmin, workspaceId]);
+
+  useEffect(() => {
+    if (!session?.accessToken || !isAdmin || !workspaceId) {
       setMembers([]);
+      setPendingInvites([]);
       setAuditEvents([]);
       return;
     }
@@ -127,15 +184,18 @@ export default function SettingsPage() {
 
     async function loadAdminData() {
       setIsLoadingMembers(true);
+      setIsLoadingInvites(true);
       setIsLoadingAuditEvents(true);
 
       try {
-        const [nextMembers, nextEvents] = await Promise.all([
+        const [nextMembers, nextInvites, nextEvents] = await Promise.all([
           authApi.listMembers(),
+          authApi.listInvites(),
           authApi.listAuditEvents(),
         ]);
         if (!active) return;
         setMembers(nextMembers);
+        setPendingInvites(nextInvites);
         setAuditEvents(nextEvents);
       } catch (error) {
         if (!active) return;
@@ -147,6 +207,7 @@ export default function SettingsPage() {
       } finally {
         if (active) {
           setIsLoadingMembers(false);
+          setIsLoadingInvites(false);
           setIsLoadingAuditEvents(false);
         }
       }
@@ -170,6 +231,21 @@ export default function SettingsPage() {
       ),
     [isAdmin, workspaceId, inviteEmail, isCreatingInvite, isLoadingWorkspace],
   );
+
+  const filteredAuditEvents = useMemo(() => {
+    if (auditFilter === "all") return auditEvents;
+
+    const isMemberAction = (action: string) => action.startsWith("member.");
+    const isInviteAction = (action: string) => action.includes("invite");
+    const isOrderAction = (action: string) => action.startsWith("orders.");
+
+    return auditEvents.filter((event) => {
+      if (auditFilter === "orders") return isOrderAction(event.action);
+      if (auditFilter === "members") return isMemberAction(event.action);
+      if (auditFilter === "invites") return isInviteAction(event.action);
+      return !isOrderAction(event.action) && !isMemberAction(event.action) && !isInviteAction(event.action);
+    });
+  }, [auditEvents, auditFilter]);
 
   const handleCreateInvite = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -203,7 +279,12 @@ export default function SettingsPage() {
       setInviteLink(inviteUrl);
       setInviteRecipient(invite.invited_email);
       setStatusMessage(`Invite prepared for ${invite.invited_email}. Your email app should open with the invite link ready to send.`);
-      setAuditEvents(await authApi.listAuditEvents());
+      const [nextInvites, nextAuditEvents] = await Promise.all([
+        authApi.listInvites(),
+        authApi.listAuditEvents(),
+      ]);
+      setPendingInvites(nextInvites);
+      setAuditEvents(nextAuditEvents);
 
       if (typeof window !== "undefined") {
         window.location.href = buildInviteEmailUrl(
@@ -220,6 +301,48 @@ export default function SettingsPage() {
       );
     } finally {
       setIsCreatingInvite(false);
+    }
+  };
+
+  const handleWorkspaceProfileUpdate = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const nextName = workspaceProfileName.trim();
+
+    if (!nextName) {
+      setErrorMessage("Workspace name is required.");
+      return;
+    }
+
+    if (nextName === workspaceName.trim()) {
+      setStatusMessage("Workspace name is unchanged.");
+      return;
+    }
+
+    setErrorMessage("");
+    setStatusMessage("");
+    setIsSavingWorkspaceProfile(true);
+
+    try {
+      const updated = await authApi.updateWorkspaceProfile({ name: nextName });
+      setWorkspaceName(updated.workspace_name);
+      if (session) {
+        persistWorkspaceDetails(session, updated.workspace_id, updated.workspace_name);
+        setSession({
+          ...session,
+          workspaceId: updated.workspace_id,
+          workspaceName: updated.workspace_name,
+        });
+      }
+      setStatusMessage(`Workspace profile updated to ${updated.workspace_name}.`);
+      setAuditEvents(await authApi.listAuditEvents());
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error && error.message
+          ? error.message
+          : "Unable to update workspace profile.",
+      );
+    } finally {
+      setIsSavingWorkspaceProfile(false);
     }
   };
 
@@ -241,6 +364,36 @@ export default function SettingsPage() {
       );
     } finally {
       setMemberActionId(null);
+    }
+  };
+
+  const handleRevokeInvite = async (invite: WorkspaceInviteSummary) => {
+    if (typeof window !== "undefined") {
+      const confirmed = window.confirm(`Revoke invite for ${invite.invited_email}?`);
+      if (!confirmed) return;
+    }
+
+    setErrorMessage("");
+    setStatusMessage("");
+    setInviteActionId(invite.id);
+
+    try {
+      await authApi.revokeInvite(invite.id);
+      const [nextInvites, nextAuditEvents] = await Promise.all([
+        authApi.listInvites(),
+        authApi.listAuditEvents(),
+      ]);
+      setPendingInvites(nextInvites);
+      setAuditEvents(nextAuditEvents);
+      setStatusMessage(`Invite for ${invite.invited_email} was revoked.`);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error && error.message
+          ? error.message
+          : "Unable to revoke invite.",
+      );
+    } finally {
+      setInviteActionId(null);
     }
   };
 
@@ -423,6 +576,47 @@ export default function SettingsPage() {
               </div>
             </div>
           )}
+
+          <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-semibold text-gray-900">Pending invites</p>
+              <span className="rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[11px] font-semibold text-gray-700">
+                {pendingInvites.length}
+              </span>
+            </div>
+
+            {isLoadingInvites ? (
+              <p className="text-sm text-gray-500">Loading pending invites...</p>
+            ) : pendingInvites.length === 0 ? (
+              <p className="text-sm text-gray-500">No pending invites.</p>
+            ) : (
+              <div className="space-y-2">
+                {pendingInvites.map((invite) => {
+                  const isBusy = inviteActionId === invite.id;
+                  return (
+                    <div key={invite.id} className="rounded-lg border border-gray-200 p-3">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">{invite.invited_email}</p>
+                          <p className="text-xs text-gray-500">
+                            Expires {formatDate(invite.expires_at)}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={isBusy}
+                          onClick={() => void handleRevokeInvite(invite)}
+                          className="rounded-lg border border-red-300 px-2.5 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:border-red-200 disabled:text-red-300"
+                        >
+                          {isBusy ? "Revoking..." : "Revoke"}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </section>
 
         <aside className="card p-5 space-y-3">
@@ -443,6 +637,47 @@ export default function SettingsPage() {
               <span className="font-medium text-gray-800">Workspace ID:</span>{" "}
               {workspaceId || (isLoadingWorkspace ? "Loading..." : "Not available")}
             </p>
+          </div>
+
+          <form className="space-y-2 rounded-xl border border-gray-200 bg-gray-50 p-3" onSubmit={handleWorkspaceProfileUpdate}>
+            <p className="text-sm font-semibold text-gray-800">Workspace profile</p>
+            <label htmlFor="workspaceName" className="block text-xs font-medium uppercase tracking-wide text-gray-500">
+              Workspace name
+            </label>
+            <input
+              id="workspaceName"
+              type="text"
+              value={workspaceProfileName}
+              onChange={(event) => setWorkspaceProfileName(event.target.value)}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 bg-white outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-400"
+              placeholder="Workspace name"
+              disabled={isSavingWorkspaceProfile}
+            />
+            <button
+              type="submit"
+              disabled={isSavingWorkspaceProfile || isLoadingWorkspace}
+              className="rounded-lg bg-gray-900 px-3 py-2 text-xs font-semibold text-white hover:bg-black disabled:cursor-not-allowed disabled:bg-gray-400"
+            >
+              {isSavingWorkspaceProfile ? "Saving..." : "Save workspace profile"}
+            </button>
+          </form>
+
+          <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-900 space-y-2">
+            <p className="font-semibold">Billing snapshot</p>
+            {isLoadingBillingSummary ? (
+              <p className="text-xs text-indigo-700">Loading billing metrics...</p>
+            ) : !billingSummary ? (
+              <p className="text-xs text-indigo-700">Billing metrics are unavailable.</p>
+            ) : (
+              <div className="space-y-1 text-xs">
+                <p><span className="font-medium">Plan:</span> {billingSummary.plan_name}</p>
+                <p><span className="font-medium">Members:</span> {billingSummary.member_count}</p>
+                <p><span className="font-medium">Materials:</span> {billingSummary.material_count}</p>
+                <p><span className="font-medium">Active projects:</span> {billingSummary.active_project_count}</p>
+                <p><span className="font-medium">Draft projects:</span> {billingSummary.draft_project_count}</p>
+                <p><span className="font-medium">Estimate volume:</span> {formatCurrency(billingSummary.monthly_estimate_total)}</p>
+              </div>
+            )}
           </div>
 
           {isLoadingWorkspace && (
@@ -555,15 +790,41 @@ export default function SettingsPage() {
             </p>
           </div>
 
+          <div className="flex flex-wrap items-center gap-2">
+            {[
+              { key: "all" as const, label: "All" },
+              { key: "orders" as const, label: "Order events" },
+              { key: "members" as const, label: "Member events" },
+              { key: "invites" as const, label: "Invite events" },
+              { key: "other" as const, label: "Other" },
+            ].map((option) => {
+              const isActive = auditFilter === option.key;
+              return (
+                <button
+                  key={option.key}
+                  type="button"
+                  onClick={() => setAuditFilter(option.key)}
+                  className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
+                    isActive
+                      ? "bg-orange-500 text-white"
+                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                  }`}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+
           {isLoadingAuditEvents ? (
             <p className="text-sm text-gray-500">Loading activity...</p>
-          ) : auditEvents.length === 0 ? (
+          ) : filteredAuditEvents.length === 0 ? (
             <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-4 text-sm text-gray-600">
-              No activity has been logged for this workspace yet.
+              No events match the selected filter.
             </div>
           ) : (
             <div className="space-y-3">
-              {auditEvents.map((event) => (
+              {filteredAuditEvents.map((event) => (
                 <div key={event.id} className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div>

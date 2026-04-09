@@ -1,0 +1,7 @@
+name,category,unit_type,unit_cost,sku,default_waste_pct,is_taxable,size_dims,notes
+2x4 Stud 8ft,Lumber,each,5.10,LUM-2X4-8,8,true,2 in x 4 in x 8 ft,Updated supplier pricing for framing stud
+1/2 in Drywall 4x8,Drywall,sheet,15.40,DWL-050-48,5,true,4 ft x 8 ft,Updated board price
+Interior Wall Paint Eggshell,Paint,gal,33.25,PNT-INT-EGG,0,true,1 gal,Updated paint cost after spring increase
+PEX Tubing 1/2 in,Plumbing,roll,67.10,PLB-PEX-050,3,true,100 ft,Updated plumbing rough-in pricing
+Luxury Vinyl Plank Flooring,Flooring,sqft,5.25,FLR-LVP-OAK,6,true,7 in x 48 in,Updated finish flooring price
+Exterior House Wrap,Exterior,sqft,0.42,EXT-WRAP-001,10,true,9 ft x 100 ft,New item added on update pass

@@ -1,4 +1,5 @@
 import unittest
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from fastapi import HTTPException
@@ -10,17 +11,26 @@ from app.api.auth import (
     _membership_role_for_session,
     _register_supabase_user_with_session,
     delete_workspace_member,
+    list_session_workspaces,
+    list_workspace_invites,
     list_audit_events,
     list_workspace_members,
+    revoke_workspace_invite,
     update_workspace_member,
 )
 from app.backfill_workspace_ids import backfill_workspace_ids
 from app.api.customers import list_customers
 from app.api.orders import list_orders, update_order
-from app.api.projects import create_project, list_projects
+from app.api.projects import (
+    DuplicateProjectRequest,
+    create_project,
+    duplicate_project,
+    list_projects,
+    project_estimate_document,
+)
 from app.api.vendors import list_vendors
 from app.db.base import Base
-from app.models.models import AuditLog, Customer, Material, Project, ProjectItem, User, Vendor, Workspace, WorkspaceMember
+from app.models.models import AuditLog, Customer, Material, Project, ProjectItem, User, Vendor, Workspace, WorkspaceInvite, WorkspaceMember
 from app.schemas.schemas import ProjectCreate, ProjectItemUpdate
 
 
@@ -75,6 +85,63 @@ class WorkspaceRecoveryTests(unittest.TestCase):
             self.assertEqual(membership.workspace_id, workspace.id)
             self.assertEqual(membership.role, "admin")
             self.assertEqual(db.query(WorkspaceMember).count(), 1)
+        finally:
+            db.close()
+
+    def test_requested_workspace_membership_is_used_when_user_belongs_to_multiple_workspaces(self):
+        db = self.make_session()
+        try:
+            user = User(email="crew@example.com", full_name="Crew Member", role="user")
+            workspace_a = Workspace(name="Workspace A")
+            workspace_b = Workspace(name="Workspace B")
+            db.add_all([user, workspace_a, workspace_b])
+            db.flush()
+
+            db.add_all([
+                WorkspaceMember(workspace_id=workspace_a.id, user_id=user.id, role="user"),
+                WorkspaceMember(workspace_id=workspace_b.id, user_id=user.id, role="admin"),
+            ])
+            db.commit()
+            db.refresh(user)
+
+            role, membership, session_repaired = _membership_role_for_session(db, user, str(workspace_b.id))
+
+            self.assertFalse(session_repaired)
+            self.assertEqual(role, "admin")
+            self.assertIsNotNone(membership)
+            self.assertEqual(membership.workspace_id, workspace_b.id)
+        finally:
+            db.close()
+
+    @patch("app.api.auth._current_user_email_from_token")
+    def test_list_session_workspaces_marks_requested_workspace_active(self, mock_current_user_email_from_token):
+        mock_current_user_email_from_token.return_value = "crew@example.com"
+
+        db = self.make_session()
+        try:
+            user = User(email="crew@example.com", full_name="Crew Member", role="user")
+            workspace_a = Workspace(name="Workspace A")
+            workspace_b = Workspace(name="Workspace B")
+            db.add_all([user, workspace_a, workspace_b])
+            db.flush()
+
+            db.add_all([
+                WorkspaceMember(workspace_id=workspace_a.id, user_id=user.id, role="user"),
+                WorkspaceMember(workspace_id=workspace_b.id, user_id=user.id, role="admin"),
+            ])
+            db.commit()
+
+            workspaces = list_session_workspaces(
+                db=db,
+                authorization="Bearer fake-token",
+                x_workspace_id=str(workspace_b.id),
+            )
+
+            self.assertEqual(len(workspaces), 2)
+            active_workspace = next((workspace for workspace in workspaces if workspace.is_active), None)
+            self.assertIsNotNone(active_workspace)
+            self.assertEqual(active_workspace.workspace_id, str(workspace_b.id))
+            self.assertEqual(active_workspace.role, "admin")
         finally:
             db.close()
 
@@ -227,6 +294,140 @@ class WorkspaceRecoveryTests(unittest.TestCase):
 
             self.assertEqual(created.created_by, owner.id)
             self.assertEqual(created.workspace_id, workspace.id)
+        finally:
+            db.close()
+
+    def test_duplicate_project_clones_items_and_resets_purchase_tracking(self):
+        db = self.make_session()
+        try:
+            owner = User(email="owner@example.com", full_name="Owner", role="admin")
+            workspace = Workspace(name="Duplication Workspace")
+            db.add_all([owner, workspace])
+            db.flush()
+
+            customer = Customer(name="Acme Customer", workspace_id=workspace.id)
+            material = Material(name="Plywood", unit_type="sheet", unit_cost=25, default_waste_pct=5, workspace_id=workspace.id)
+            db.add_all([customer, material])
+            db.flush()
+
+            db.add(WorkspaceMember(workspace_id=workspace.id, user_id=owner.id, role="admin"))
+            db.flush()
+
+            source_project = Project(
+                name="Kitchen Estimate",
+                customer_id=customer.id,
+                status="active",
+                created_by=owner.id,
+                workspace_id=workspace.id,
+            )
+            db.add(source_project)
+            db.flush()
+
+            source_item = ProjectItem(
+                project_id=source_project.id,
+                material_id=material.id,
+                quantity=2,
+                unit_type="sheet",
+                unit_cost=25,
+                waste_pct=10,
+                total_qty=2.2,
+                line_subtotal=55,
+                order_status="ordered",
+                po_number="PO-77",
+                purchase_notes="Existing note",
+                workspace_id=workspace.id,
+            )
+            db.add(source_item)
+            db.commit()
+
+            response = duplicate_project(
+                project_id=source_project.id,
+                payload=DuplicateProjectRequest(name="Kitchen Estimate Template", include_items=True),
+                db=db,
+                current_user=owner,
+                current_workspace_id=workspace.id,
+            )
+
+            self.assertEqual(response.duplicated_items, 1)
+            self.assertEqual(response.project.name, "Kitchen Estimate Template")
+            self.assertEqual(response.project.status, "draft")
+            self.assertEqual(len(response.project.items), 1)
+            self.assertEqual(response.project.items[0].order_status, "draft")
+            self.assertIsNone(response.project.items[0].po_number)
+
+            audit_event = (
+                db.query(AuditLog)
+                .filter(AuditLog.workspace_id == workspace.id, AuditLog.action == "projects.duplicated")
+                .first()
+            )
+            self.assertIsNotNone(audit_event)
+        finally:
+            db.close()
+
+    def test_project_estimate_document_includes_markup_pricing(self):
+        db = self.make_session()
+        try:
+            owner = User(email="owner@example.com", full_name="Owner", role="admin")
+            workspace = Workspace(name="Estimate Doc Workspace")
+            db.add_all([owner, workspace])
+            db.flush()
+
+            customer = Customer(name="Acme Customer", workspace_id=workspace.id)
+            material = Material(name="Tile", unit_type="box", unit_cost=40, default_waste_pct=0, workspace_id=workspace.id)
+            db.add_all([customer, material])
+            db.flush()
+
+            db.add(WorkspaceMember(workspace_id=workspace.id, user_id=owner.id, role="admin"))
+            db.flush()
+
+            project = Project(
+                name="Bathroom Remodel",
+                customer_id=customer.id,
+                status="active",
+                created_by=owner.id,
+                workspace_id=workspace.id,
+                default_tax_pct=8.5,
+            )
+            db.add(project)
+            db.flush()
+
+            item = ProjectItem(
+                project_id=project.id,
+                material_id=material.id,
+                quantity=3,
+                unit_type="box",
+                unit_cost=40,
+                waste_pct=0,
+                total_qty=3,
+                line_subtotal=120,
+                workspace_id=workspace.id,
+            )
+            db.add(item)
+            db.commit()
+
+            response = project_estimate_document(
+                project_id=project.id,
+                markup_pct=25,
+                db=db,
+                current_user=owner,
+                current_workspace_id=workspace.id,
+            )
+
+            html = response.body.decode("utf-8")
+            self.assertIn("Project Estimate", html)
+            self.assertIn("Bathroom Remodel", html)
+            self.assertIn("Tile", html)
+            self.assertIn("Markup (25.00%)", html)
+
+            audit_event = (
+                db.query(AuditLog)
+                .filter(
+                    AuditLog.workspace_id == workspace.id,
+                    AuditLog.action == "projects.estimate_document_generated",
+                )
+                .first()
+            )
+            self.assertIsNotNone(audit_event)
         finally:
             db.close()
 
@@ -649,6 +850,101 @@ class WorkspaceRecoveryTests(unittest.TestCase):
             self.assertEqual(len(events), 2)
             self.assertEqual([event.action for event in events], ["member.role_updated", "member.removed"])
             self.assertTrue(all(event.user_id == owner.id for event in events))
+        finally:
+            db.close()
+
+    def test_list_workspace_invites_returns_only_pending_invites_for_workspace(self):
+        db = self.make_session()
+        try:
+            owner = User(email="owner@example.com", full_name="Owner", role="admin")
+            teammate = User(email="worker@example.com", full_name="Worker", role="user")
+            workspace = Workspace(name="Crew Workspace", created_by=owner.id)
+            other_workspace = Workspace(name="Other Workspace")
+            db.add_all([owner, teammate, workspace, other_workspace])
+            db.flush()
+
+            db.add_all([
+                WorkspaceMember(workspace_id=workspace.id, user_id=owner.id, role="admin"),
+                WorkspaceMember(workspace_id=workspace.id, user_id=teammate.id, role="user"),
+            ])
+            db.flush()
+
+            future_expiry = datetime.now(timezone.utc) + timedelta(days=7)
+            db.add_all([
+                WorkspaceInvite(
+                    workspace_id=workspace.id,
+                    invited_email="pending@example.com",
+                    invite_token="pending-token",
+                    invited_by_user_id=owner.id,
+                    expires_at=future_expiry,
+                ),
+                WorkspaceInvite(
+                    workspace_id=workspace.id,
+                    invited_email="accepted@example.com",
+                    invite_token="accepted-token",
+                    invited_by_user_id=owner.id,
+                    expires_at=future_expiry,
+                    accepted_at=datetime.now(timezone.utc),
+                    accepted_by_user_id=teammate.id,
+                ),
+                WorkspaceInvite(
+                    workspace_id=other_workspace.id,
+                    invited_email="outside@example.com",
+                    invite_token="outside-token",
+                    invited_by_user_id=owner.id,
+                    expires_at=future_expiry,
+                ),
+            ])
+            db.commit()
+
+            invites = list_workspace_invites(
+                include_expired=False,
+                db=db,
+                current_user=owner,
+                current_workspace_id=workspace.id,
+            )
+
+            self.assertEqual(len(invites), 1)
+            self.assertEqual(invites[0].invited_email, "pending@example.com")
+            self.assertFalse(invites[0].is_expired)
+        finally:
+            db.close()
+
+    def test_revoke_workspace_invite_deletes_invite_and_records_audit_event(self):
+        db = self.make_session()
+        try:
+            owner = User(email="owner@example.com", full_name="Owner", role="admin")
+            workspace = Workspace(name="Crew Workspace", created_by=owner.id)
+            db.add_all([owner, workspace])
+            db.flush()
+
+            db.add(WorkspaceMember(workspace_id=workspace.id, user_id=owner.id, role="admin"))
+            db.flush()
+
+            invite = WorkspaceInvite(
+                workspace_id=workspace.id,
+                invited_email="pending@example.com",
+                invite_token="pending-token",
+                invited_by_user_id=owner.id,
+                expires_at=datetime.now(timezone.utc) + timedelta(days=3),
+            )
+            db.add(invite)
+            db.commit()
+
+            revoke_workspace_invite(
+                invite_id=str(invite.id),
+                db=db,
+                current_user=owner,
+                current_workspace_id=workspace.id,
+            )
+
+            self.assertIsNone(db.query(WorkspaceInvite).filter(WorkspaceInvite.id == invite.id).first())
+            event = (
+                db.query(AuditLog)
+                .filter(AuditLog.workspace_id == workspace.id, AuditLog.action == "member.invite_revoked")
+                .first()
+            )
+            self.assertIsNotNone(event)
         finally:
             db.close()
 

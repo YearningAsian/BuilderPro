@@ -1,137 +1,120 @@
 # BuilderPro Explained
 
-## What this project is
-`BuilderPro` is a full-stack construction operations app for managing **materials, estimates, projects, vendors, customers, and team access**.
+## Project Goal
+BuilderPro is a construction operations app focused on one core outcome: help a company create reliable estimates and manage purchasing inside a shared workspace.
 
-It combines:
-- a **Next.js frontend** in `frontend/`
-- a **FastAPI backend** in `backend/`
-- a **PostgreSQL/Supabase database** defined in `supabase/migrations/`
+The platform is built to:
+1. Keep a clean source of truth for materials, vendors, customers, and projects.
+2. Turn project requirements into estimate line items with repeatable math.
+3. Support multi-user collaboration with workspace-level access control.
+4. Provide a production-ready API and schema foundation for future expansion (reporting, exports, deeper procurement workflows).
 
----
+## What the System Includes
+BuilderPro is a full-stack app with three main layers:
+1. Frontend: Next.js 16 + React 19 + TypeScript in frontend.
+2. Backend: FastAPI + SQLAlchemy in backend.
+3. Database: Postgres/Supabase schema managed through SQL migrations in supabase/migrations.
 
-## Main goal
-The goal of the project is to help a construction business:
+## How It Works End to End
+1. User signs in or signs up through frontend auth pages.
+2. Frontend stores session and calls backend APIs using Authorization bearer tokens.
+3. Backend resolves the current user and active workspace from auth context.
+4. Every business query is workspace-scoped (materials, customers, vendors, projects, project items).
+5. Frontend renders live data and updates local UI state after API writes.
 
-1. **organize master data**
-   - materials
-   - vendors
-   - customers
-2. **build project estimates**
-   - add line items
-   - apply waste and tax percentages
-   - keep price snapshots for each project
-3. **support team collaboration**
-   - company signup
-   - workspace membership
-   - invite-based onboarding
-4. **move toward a production-ready estimating system**
-   - typed API layer
-   - authentication
-   - database constraints and indexes
-
----
-
-## How the app is structured
-
-### 1) Frontend (`frontend/`)
-The UI is built with **Next.js 16 + React 19 + TypeScript**.
-
-Key areas:
-- `app/signin`, `app/signup`, `app/join-invite` → authentication flows
-- `app/projects`, `app/materials`, `app/orders` → main business screens
-- `src/components/` → reusable UI blocks such as dashboard, lists, search, and project detail
-- `src/services/api.ts` → typed API client for the backend
-- `src/hooks/useStore.tsx` → current prototype state store using seed data
-
-### 2) Backend (`backend/`)
-The API is built with **FastAPI + SQLAlchemy**.
+## Frontend Architecture (frontend)
+The frontend uses the App Router and is organized by business area.
 
 Main routes:
-- `auth.py` → sign-in, sign-out, company signup, invites
-- `materials.py` → material CRUD
-- `projects.py` → project CRUD
-- `orders.py` → project item / order-style line item management
-- `customers.py` and `vendors.py` → related business records
+1. app/signin, app/signup, app/join-invite, app/forgot-password for auth flows.
+2. app/projects, app/materials, app/vendors, app/customers, app/orders, app/settings for business workflows.
+3. app/search for global lookup.
 
-### 3) Database (`supabase/`)
-The schema is managed through **Supabase SQL migrations**, not runtime auto-creation.
+Key implementation pieces:
+1. src/services/api.ts is the type-safe API client for backend endpoints under /api.
+2. src/hooks/useStore.tsx is the app store/provider. It now performs live API reads and writes (not seed-only behavior).
+3. Session helpers in src/lib/auth drive auth headers and session-expiry handling.
 
-Core tables:
-- `users`
-- `customers`
-- `vendors`
-- `materials`
-- `projects`
-- `project_items`
-- `workspaces`
-- `workspace_members`
-- `workspace_invites`
+## Backend Architecture (backend)
+FastAPI app entrypoint: app/main.py.
 
----
+Registered route groups:
+1. /api/auth: sign-in/sign-out, signup, invite flow, workspace members, audit log.
+2. /api/materials: workspace-scoped material CRUD.
+3. /api/customers: workspace-scoped customer CRUD.
+4. /api/vendors: workspace-scoped vendor CRUD.
+5. /api/projects: workspace-scoped project CRUD and project line-item creation.
+6. /api/orders: project item CRUD, bulk order status updates, vendor PO HTML generation.
 
-## What the product currently does
+Operational endpoints:
+1. /health for service health.
+2. /health/db for DB connectivity validation.
 
-### Core implemented capabilities
-- user authentication through **Supabase Auth**
-- company/workspace creation on signup
-- invite-based team onboarding
-- customer and vendor records
-- material catalog management
-- project creation and status tracking
-- project line item calculations with:
-  - quantity
-  - waste percentage
-  - unit cost snapshot
-  - subtotal calculation
+## Auth and Workspace Model
+Auth is integrated with Supabase Auth on the backend.
 
-### Important calculation behavior
-The system keeps estimate values stable by storing snapshot fields on each project item:
-- `total_qty = quantity × (1 + waste_pct / 100)`
-- `line_subtotal = total_qty × unit_cost`
+Important behavior:
+1. Signup can create company/workspace context and membership.
+2. Invite flow supports workspace onboarding with token-based join.
+3. Membership roles are admin/user.
+4. Legacy admin recovery logic can auto-repair missing workspace memberships.
+5. Local auth fallback can issue a dev token when Supabase rate-limits during local testing (controlled by ENABLE_LOCAL_AUTH_FALLBACK).
 
-This means later changes to a material record do not silently rewrite old project estimates.
+## Data Model and Business Rules
+Core entities:
+1. users
+2. workspaces
+3. workspace_members
+4. workspace_invites
+5. audit_logs
+6. customers
+7. vendors
+8. materials
+9. projects
+10. project_items
 
----
+Key rules enforced in models and schemas:
+1. Non-negative numeric constraints for costs and percentages.
+2. Positive quantity checks for project items.
+3. Enumerated status fields (project status and order status).
+4. Workspace-scoped uniqueness (for example vendor names and material SKU scope).
 
-## Current development status
-The project is **partly production-oriented and partly prototype**.
+## Estimate and Purchasing Logic
+For project items, totals are computed and stored at write time:
+1. total_qty = quantity * (1 + waste_pct / 100)
+2. line_subtotal = total_qty * unit_cost
 
-### Already solid
-- backend API structure
-- database constraints and indexes
-- auth wiring with Supabase
-- role/workspace model
+Why this matters:
+1. Item rows keep price and quantity snapshots tied to the project timeline.
+2. Later changes to a material record do not silently rewrite historical estimate values.
 
-### Still being finished
-- frontend still relies heavily on `src/data/seed.ts` and `useStore()` for live screen data
-- typed API methods exist, but not every screen is fully connected to the backend yet
-- workspace/invite UI is present in flow design, but broader team management UX can still be expanded
-- testing and reporting/export features are still limited
+Order workflow includes:
+1. Status transitions: draft, ordered, received, cancelled.
+2. Timestamp handling for ordered_at and received_at.
+3. Bulk status update by vendor.
+4. Generated vendor purchase-order HTML (print/save as PDF flow).
 
----
+## Runtime and Local Development
+Primary startup script: run-all.sh.
 
-## Typical user flow
-1. A company admin signs up from `app/signup/`.
-2. The backend creates a user and a workspace.
-3. The admin adds customers, vendors, and materials.
-4. The team creates projects.
-5. Materials are added as project items.
-6. Waste and pricing are calculated into estimate subtotals.
-7. Admins can invite additional users into the workspace.
+What it does:
+1. Ensures backend venv and frontend node_modules exist.
+2. Installs dependencies when lock/requirements change.
+3. Starts backend (default 8000) and frontend (default 3500).
+4. Provides SQLite fallback only when no backend DB config is present.
+5. Sets frontend API URL and allowed origins for local cross-origin requests.
 
----
+## Current Project State
+Already strong:
+1. Clear API boundaries and typed frontend client.
+2. Workspace-safe data scoping across resources.
+3. Invite/member/audit infrastructure.
+4. Migration-first database approach.
 
-## Why this project matters
-BuilderPro is aiming to become a practical internal tool for construction teams that need:
-- faster estimating
-- cleaner material tracking
-- reusable pricing data
-- multi-user collaboration under one company workspace
+Still evolving:
+1. Frontend UX and screens can continue to mature (especially team management/admin tooling).
+2. Test coverage is growing but not yet broad across all modules.
+3. Additional reporting/export workflows are natural next product steps.
 
-In short, it is a **construction estimating and operations foundation** that is moving from prototype data toward a real connected production app.
-
----
-
-## Suggested next step
-The most valuable next step is to finish connecting the frontend screens to the real backend APIs so the app operates fully on the Supabase/Postgres data model instead of seed-only local state.
+## In One Line
+BuilderPro is a workspace-aware construction estimating and purchasing platform that is moving from a solid operational core to a more complete production product experience.

@@ -1,0 +1,11 @@
+name,category,unit_type,unit_cost,sku,default_waste_pct,is_taxable,size_dims,notes
+2x4 Stud 8ft,Lumber,each,4.85,LUM-2X4-8,8,true,2 in x 4 in x 8 ft,Standard framing stud
+3-1/4 in Baseboard Trim,Finish Carpentry,lf,2.65,TRM-BASE-325,10,true,3.25 in profile,Primed MDF baseboard
+1/2 in Drywall 4x8,Drywall,sheet,14.95,DWL-050-48,5,true,4 ft x 8 ft,Interior gypsum board
+Interior Wall Paint Eggshell,Paint,gal,31.50,PNT-INT-EGG,0,true,1 gal,Neutral white eggshell paint
+Exterior Deck Screw 2-1/2 in,Hardware,box,28.40,HDW-SCR-250,2,true,#8 x 2.5 in,1 lb corrosion resistant screws
+Thinset Mortar 50lb,Tile,bag,18.75,TIL-THINSET-50,7,true,50 lb,Bonding mortar for floor tile
+Quartz Countertop Slab,Stone,sqft,72.00,STN-QTZ-WHT,12,true,126 in x 63 in,Polished white quartz
+PEX Tubing 1/2 in,Plumbing,roll,64.25,PLB-PEX-050,3,true,100 ft,Red PEX supply tubing
+LED Recessed Can Light,Electrical,each,22.90,ELC-LED-6,1,true,6 in,Integrated dimmable ceiling light
+Luxury Vinyl Plank Flooring,Flooring,sqft,4.95,FLR-LVP-OAK,6,true,7 in x 48 in,Water resistant oak finish plank

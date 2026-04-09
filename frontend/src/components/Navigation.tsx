@@ -4,7 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { useSignOut } from "@/hooks/useSignOut";
-import { getActiveSession } from "@/lib/auth";
+import { getActiveSession, switchActiveWorkspace } from "@/lib/auth";
+import { authApi, type SessionWorkspaceSummary } from "@/services/api";
 
 /**
  * HubSpot-inspired sidebar navigation.
@@ -68,6 +69,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", href: "/", icon: "dashboard" },
   { label: "Materials", href: "/materials", icon: "materials" },
   { label: "Projects", href: "/projects", icon: "projects" },
+  { label: "Templates", href: "/projects/templates", icon: "projects" },
   { label: "Orders", href: "/orders", icon: "orders" },
   { label: "Customers", href: "/customers", icon: "customers" },
   { label: "Vendors", href: "/vendors", icon: "vendors" },
@@ -78,6 +80,9 @@ export default function Navigation() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState<ReturnType<typeof getActiveSession>>(null);
+  const [availableWorkspaces, setAvailableWorkspaces] = useState<SessionWorkspaceSummary[]>([]);
+  const [workspaceError, setWorkspaceError] = useState("");
+  const [isSwitchingWorkspace, setIsSwitchingWorkspace] = useState(false);
   const { signOut, isSigningOut } = useSignOut();
 
   useEffect(() => {
@@ -93,6 +98,31 @@ export default function Navigation() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!currentUser?.accessToken) {
+      return;
+    }
+
+    let active = true;
+
+    async function loadWorkspaces() {
+      try {
+        const workspaces = await authApi.listWorkspaces();
+        if (!active) return;
+        setAvailableWorkspaces(workspaces);
+      } catch (error) {
+        if (!active) return;
+        setWorkspaceError(error instanceof Error ? error.message : "Unable to load workspaces.");
+      }
+    }
+
+    void loadWorkspaces();
+
+    return () => {
+      active = false;
+    };
+  }, [currentUser?.accessToken, currentUser?.workspaceId]);
+
   const navItems = useMemo(
     () =>
       currentUser?.role === "admin"
@@ -106,6 +136,29 @@ export default function Navigation() {
   const roleBadgeClasses = isAdmin
     ? "border-orange-400/30 bg-orange-500/20 text-orange-200"
     : "border-blue-400/30 bg-blue-500/20 text-blue-200";
+  const visibleWorkspaces = currentUser?.accessToken ? availableWorkspaces : [];
+  const canSwitchWorkspaces = visibleWorkspaces.length > 1;
+
+  const handleWorkspaceChange = (workspaceId: string) => {
+    const nextWorkspace = visibleWorkspaces.find((workspace) => workspace.workspace_id === workspaceId);
+    if (!nextWorkspace || workspaceId === currentUser?.workspaceId) {
+      return;
+    }
+
+    setWorkspaceError("");
+    setIsSwitchingWorkspace(true);
+
+    const nextSession = switchActiveWorkspace(nextWorkspace.workspace_id, nextWorkspace.workspace_name);
+    if (!nextSession) {
+      setIsSwitchingWorkspace(false);
+      setWorkspaceError("Unable to update the active workspace.");
+      return;
+    }
+
+    setCurrentUser(nextSession);
+    setMobileOpen(false);
+    window.location.reload();
+  };
 
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);
@@ -151,6 +204,25 @@ export default function Navigation() {
             <span className={`mt-2 inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${roleBadgeClasses}`}>
               {roleLabel}
             </span>
+            <p className="mt-2 text-xs text-gray-300">{currentUser?.workspaceName ?? "No workspace selected"}</p>
+            {canSwitchWorkspaces && (
+              <label className="mt-3 block text-[11px] uppercase tracking-wide text-gray-400">
+                Active workspace
+                <select
+                  value={currentUser?.workspaceId ?? ""}
+                  onChange={(event) => handleWorkspaceChange(event.target.value)}
+                  disabled={isSwitchingWorkspace}
+                  className="mt-1 w-full rounded-md border border-white/10 bg-[#253041] px-2 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-orange-400"
+                >
+                  {visibleWorkspaces.map((workspace) => (
+                    <option key={workspace.workspace_id} value={workspace.workspace_id}>
+                      {workspace.workspace_name} ({workspace.role})
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {currentUser?.accessToken && workspaceError && <p className="mt-2 text-xs text-red-300">{workspaceError}</p>}
           </div>
           <button
             type="button"
@@ -190,6 +262,25 @@ export default function Navigation() {
       {/* Mobile dropdown */}
       {mobileOpen && (
         <div className="md:hidden fixed top-14 inset-x-0 bg-[#2d3748] border-t border-white/10 z-30 py-2 px-3 space-y-1 shadow-lg">
+          <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-white">
+            <p className="text-[11px] uppercase tracking-wide text-gray-400">Workspace</p>
+            <p className="mt-1 text-sm font-medium">{currentUser?.workspaceName ?? "No workspace selected"}</p>
+            {canSwitchWorkspaces && (
+              <select
+                value={currentUser?.workspaceId ?? ""}
+                onChange={(event) => handleWorkspaceChange(event.target.value)}
+                disabled={isSwitchingWorkspace}
+                className="mt-3 w-full rounded-md border border-white/10 bg-[#253041] px-2 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-orange-400"
+              >
+                {visibleWorkspaces.map((workspace) => (
+                  <option key={workspace.workspace_id} value={workspace.workspace_id}>
+                    {workspace.workspace_name} ({workspace.role})
+                  </option>
+                ))}
+              </select>
+            )}
+            {currentUser?.accessToken && workspaceError && <p className="mt-2 text-xs text-red-300">{workspaceError}</p>}
+          </div>
           {navItems.map((item) => {
             const active = isActive(item.href);
             return (

@@ -5,9 +5,9 @@ const AUTH_ROUTES = new Set(["/signin", "/signup", "/join-invite", "/forgot-pass
 export function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
   const isAuthRoute = AUTH_ROUTES.has(pathname);
-  const isAuthed = request.cookies.get("builderpro_auth")?.value === "1";
+  const hasAuthPresenceCookie = request.cookies.get("builderpro_auth")?.value === "1";
 
-  if (!isAuthed && !isAuthRoute) {
+  if (!hasAuthPresenceCookie && !isAuthRoute) {
     const signInUrl = request.nextUrl.clone();
     signInUrl.pathname = "/signin";
     signInUrl.search = "";
@@ -16,10 +16,8 @@ export function proxy(request: NextRequest) {
     return NextResponse.redirect(signInUrl);
   }
 
-  if (isAuthed && isAuthRoute) {
-    const role = request.cookies.get("builderpro_role")?.value;
-    const destination = role === "user" ? "/projects" : "/";
-    return NextResponse.redirect(new URL(destination, request.url));
+  if (hasAuthPresenceCookie && isAuthRoute) {
+    return NextResponse.redirect(new URL("/", request.url));
   }
 
   return NextResponse.next();

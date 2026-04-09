@@ -3,6 +3,29 @@ from uuid import UUID
 from datetime import datetime
 from typing import Literal, Optional
 from decimal import Decimal
+from urllib.parse import urlparse
+
+
+def _normalize_carrier(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    normalized = " ".join(value.strip().split())
+    return normalized or None
+
+
+def _normalize_tracking_url(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+
+    normalized = value.strip()
+    if not normalized:
+        return None
+
+    parsed = urlparse(normalized)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("tracking_url must be a valid absolute http(s) URL")
+
+    return normalized
 
 
 # =====================================================
@@ -152,6 +175,70 @@ class Material(MaterialBase):
         from_attributes = True
 
 
+class MaterialPriceHistoryEntry(BaseModel):
+    id: UUID
+    material_id: UUID
+    previous_unit_cost: Optional[Decimal] = None
+    new_unit_cost: Decimal
+    source: Optional[str] = None
+    changed_by_user_id: Optional[UUID] = None
+    changed_at: datetime
+
+
+class MaterialAttachmentBase(BaseModel):
+    name: str
+    url: str
+    mime_type: Optional[str] = None
+    size_bytes: Optional[int] = None
+
+    @field_validator("name")
+    @classmethod
+    def attachment_name_required(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Attachment name is required")
+        return normalized
+
+    @field_validator("url")
+    @classmethod
+    def attachment_url_must_be_absolute_http(cls, value: str) -> str:
+        normalized = value.strip()
+        parsed = urlparse(normalized)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("Attachment URL must be a valid absolute http(s) URL")
+        return normalized
+
+    @field_validator("size_bytes")
+    @classmethod
+    def attachment_size_non_negative(cls, value: Optional[int]) -> Optional[int]:
+        if value is not None and value < 0:
+            raise ValueError("Attachment size must be >= 0")
+        return value
+
+
+class MaterialAttachmentCreate(MaterialAttachmentBase):
+    pass
+
+
+class MaterialAttachment(MaterialAttachmentBase):
+    id: str
+    material_id: UUID
+    uploaded_at: datetime
+    uploaded_by_user_id: Optional[UUID] = None
+
+
+class MaterialCsvImportError(BaseModel):
+    row: int
+    message: str
+
+
+class MaterialCsvImportSummary(BaseModel):
+    created: int
+    updated: int
+    skipped: int
+    errors: list[MaterialCsvImportError]
+
+
 # =====================================================
 # PROJECT ITEM SCHEMAS
 # =====================================================
@@ -190,6 +277,9 @@ class ProjectItemCreate(BaseModel):
     tracking_url: Optional[str] = None
     notes: Optional[str] = None
 
+    _carrier_validator = field_validator("carrier", mode="before")(_normalize_carrier)
+    _tracking_url_validator = field_validator("tracking_url", mode="before")(_normalize_tracking_url)
+
 
 class ProjectItemUpdate(BaseModel):
     quantity: Optional[Decimal] = None
@@ -203,6 +293,9 @@ class ProjectItemUpdate(BaseModel):
     tracking_number: Optional[str] = None
     tracking_url: Optional[str] = None
     notes: Optional[str] = None
+
+    _carrier_validator = field_validator("carrier", mode="before")(_normalize_carrier)
+    _tracking_url_validator = field_validator("tracking_url", mode="before")(_normalize_tracking_url)
 
 
 class ProjectItem(ProjectItemBase):

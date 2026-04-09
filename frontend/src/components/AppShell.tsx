@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import Navigation from "@/components/Navigation";
-import { getActiveSession } from "@/lib/auth";
+import { getActiveSession, refreshSessionActivity } from "@/lib/auth";
 import { useSignOut } from "@/hooks/useSignOut";
 
 const AUTH_ROUTES = ["/signin", "/signup", "/join-invite", "/forgot-password"];
@@ -22,10 +22,18 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     window.addEventListener("focus", syncSession);
     window.addEventListener("storage", syncSession);
 
+    const activityHandler = () => refreshSessionActivity();
+    window.addEventListener("click", activityHandler);
+    window.addEventListener("keydown", activityHandler);
+    window.addEventListener("visibilitychange", activityHandler);
+
     return () => {
       window.clearTimeout(timer);
       window.removeEventListener("focus", syncSession);
       window.removeEventListener("storage", syncSession);
+      window.removeEventListener("click", activityHandler);
+      window.removeEventListener("keydown", activityHandler);
+      window.removeEventListener("visibilitychange", activityHandler);
     };
   }, []);
 

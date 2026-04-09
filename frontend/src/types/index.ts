@@ -37,6 +37,17 @@ export interface WorkspaceMember {
   created_at: ISODateString;
 }
 
+export interface WorkspaceInviteSummary {
+  id: UUID;
+  workspace_id: UUID;
+  invited_email: string;
+  invite_token: string;
+  invited_by_user_id: UUID;
+  expires_at: ISODateString;
+  created_at: ISODateString;
+  is_expired: boolean;
+}
+
 export interface AuditLogEntry {
   id: UUID;
   action: string;
@@ -119,6 +130,46 @@ export interface MaterialCreate {
   default_waste_pct?: number;
 }
 
+export interface MaterialPriceHistoryEntry {
+  id: UUID;
+  material_id: UUID;
+  previous_unit_cost: number | null;
+  new_unit_cost: number;
+  source: string | null;
+  changed_by_user_id: UUID | null;
+  changed_at: ISODateString;
+}
+
+export interface MaterialAttachment {
+  id: string;
+  material_id: UUID;
+  name: string;
+  url: string;
+  mime_type: string | null;
+  size_bytes: number | null;
+  uploaded_at: ISODateString;
+  uploaded_by_user_id: UUID | null;
+}
+
+export interface MaterialAttachmentCreate {
+  name: string;
+  url: string;
+  mime_type?: string | null;
+  size_bytes?: number | null;
+}
+
+export interface MaterialCsvImportError {
+  row: number;
+  message: string;
+}
+
+export interface MaterialCsvImportSummary {
+  created: number;
+  updated: number;
+  skipped: number;
+  errors: MaterialCsvImportError[];
+}
+
 // ─── Project Item (line item in a record/estimate) ───────────
 export type OrderStatus = "draft" | "ordered" | "received" | "cancelled";
 
@@ -135,6 +186,10 @@ export interface ProjectItem {
   order_status: OrderStatus;
   po_number: string | null;
   purchase_notes: string | null;
+  expected_delivery_at: ISODateString | null;
+  carrier: string | null;
+  tracking_number: string | null;
+  tracking_url: string | null;
   notes: string | null;
   ordered_at: ISODateString | null;
   received_at: ISODateString | null;
@@ -151,6 +206,10 @@ export interface ProjectItemCreate {
   order_status?: OrderStatus;
   po_number?: string | null;
   purchase_notes?: string | null;
+  expected_delivery_at?: ISODateString | null;
+  carrier?: string | null;
+  tracking_number?: string | null;
+  tracking_url?: string | null;
   notes?: string | null;
 }
 
@@ -189,4 +248,48 @@ export type SortDirection = "asc" | "desc";
 export interface SortConfig<K extends string = string> {
   key: K;
   direction: SortDirection;
+}
+
+export type SearchEntity = "all" | "materials" | "projects" | "customers" | "vendors";
+
+export interface SearchMaterialResult {
+  id: UUID;
+  name: string;
+  category: string | null;
+  sku: string | null;
+  unit_type: string;
+  unit_cost: number;
+  default_vendor_id: UUID | null;
+}
+
+export interface SearchProjectResult {
+  id: UUID;
+  name: string;
+  status: ProjectStatus;
+  customer_id: UUID;
+  item_count: number;
+  estimate_total: number;
+}
+
+export interface SearchCustomerResult {
+  id: UUID;
+  name: string;
+  email: string | null;
+  phone: string | null;
+}
+
+export interface SearchVendorResult {
+  id: UUID;
+  name: string;
+  email: string | null;
+  phone: string | null;
+}
+
+export interface SearchResponse {
+  query: string;
+  total: number;
+  materials: SearchMaterialResult[];
+  projects: SearchProjectResult[];
+  customers: SearchCustomerResult[];
+  vendors: SearchVendorResult[];
 }

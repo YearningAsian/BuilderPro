@@ -1,168 +1,102 @@
 # BuilderPro Backend
 
-A FastAPI-based REST API for BuilderPro, a materials and cost management system for construction teams.
+FastAPI backend for BuilderPro. The API is workspace-aware and currently serves auth, invites, materials, projects, orders, customers, vendors, search, audit activity, and workspace admin workflows.
 
-## Tech Stack
+## Requirements
 
-- **Framework**: FastAPI
-- **ORM**: SQLAlchemy
-- **Database**: PostgreSQL (via Supabase)
-- **Server**: Uvicorn
-- **Language**: Python 3.8+
+- Python 3.11+ recommended
+- PostgreSQL or Supabase Postgres
+- pip
 
-## Project Structure
+## Install
 
-```
-backend/
-├── app/
-│   ├── api/                 # API routes
-│   │   ├── materials.py    # Materials endpoints
-│   │   ├── projects.py     # Projects endpoints
-│   │   ├── orders.py       # Orders (project items) endpoints
-│   │   ├── customers.py    # Customers endpoints
-│   │   └── vendors.py      # Vendors endpoints
-│   ├── core/
-│   │   └── config.py       # Configuration settings
-│   ├── db/
-│   │   └── base.py         # Database setup
-│   ├── models/
-│   │   └── models.py       # SQLAlchemy models
-│   ├── schemas/
-│   │   └── schemas.py      # Pydantic schemas
-│   └── main.py             # FastAPI app initialization
-├── requirements.txt         # Python dependencies
-├── .env.example            # Environment variables template
-└── README.md
-```
-
-## Installation
-
-### Prerequisites
-- Python 3.8+
-- pip or poetry
-- PostgreSQL (or Supabase instance)
-
-### Setup
-
-1. **Create virtual environment**
 ```bash
 cd backend
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
-
-2. **Install dependencies**
-```bash
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-3. **Configure environment**
-Copy `.env.example` to `.env` and fill in your database URL:
+## Environment
+
+Copy `.env.example` to `.env` and fill in the values you use locally.
+
 ```bash
 cp .env.example .env
 ```
 
-Edit `.env`:
+Current backend config reads:
+
 ```env
-DATABASE_URL=postgresql://user:password@localhost:5432/builderpro
+DATABASE_URL=postgresql://postgres:password@localhost:5432/builderpro
 SUPABASE_URL=your_supabase_url
 SUPABASE_KEY=your_supabase_anon_key
 SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
-SECRET_KEY=your-secret-key-for-production
+ENABLE_LOCAL_AUTH_FALLBACK=true
+SECRET_KEY=your-secret-key-change-in-production
 ```
 
-> Use `SUPABASE_SERVICE_ROLE_KEY` on the backend if you want workspace signup to auto-confirm the email and return a session immediately.
->
-> For local development, `ENABLE_LOCAL_AUTH_FALLBACK=true` lets signup keep working even if Supabase temporarily returns `429 Too Many Requests` during rapid testing.
+Notes:
 
-## Running the Server
+- `SUPABASE_SERVICE_ROLE_KEY` is preferred on the backend for signup, invite, and storage flows.
+- `ENABLE_LOCAL_AUTH_FALLBACK=true` allows local dev signup to keep working when Supabase rate-limits rapid test traffic.
+- The backend normalizes `postgres://...` URLs to `postgresql://...`.
 
-### Development
+## Run
+
 ```bash
 cd backend
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-The API will be available at `http://localhost:8000`
+API base: `http://localhost:8000/api`
 
-### Production
+Health endpoints:
+
+- `GET /health`
+- `GET /health/db`
+
+Docs:
+
+- `http://localhost:8000/docs`
+- `http://localhost:8000/redoc`
+
+## Current API Areas
+
+- `auth` sign-in, sign-out, signup-company, forgot-password, recovery verification, password reset
+- `auth` workspace members, invites, audit log, workspace profile, billing summary
+- `materials` CRUD, CSV import, price history, link attachments, uploaded attachments
+- `projects` CRUD, duplication, estimate-document export
+- `orders` project-item ordering, vendor batch status updates, PO document generation, delivery tracking
+- `customers` CRUD
+- `vendors` CRUD
+- `search` workspace-wide search across materials, projects, customers, and vendors
+
+## Testing
+
+Backend tests live under `backend/tests`.
+
+Run them with:
+
 ```bash
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+cd backend
+python3 -m pytest
 ```
 
-## API Documentation
+Current test coverage includes:
 
-Once the server is running, access:
-- **Swagger UI**: http://localhost:8000/docs
-- **ReDoc**: http://localhost:8000/redoc
+- auth and workspace recovery
+- materials enhancements
+- orders workflow
 
-## API Endpoints
+## Database and Migrations
 
-### Materials
-- `GET /api/materials` - Get all materials
-- `GET /api/materials/{id}` - Get material by ID
-- `POST /api/materials` - Create material
-- `PUT /api/materials/{id}` - Update material
-- `DELETE /api/materials/{id}` - Delete material
+- Schema is managed through `supabase/migrations/`
+- The app does not call `Base.metadata.create_all()` at startup in normal runtime
+- Workspace ownership is enforced in the current schema and migrations
 
-### Projects
-- `GET /api/projects` - Get all projects
-- `GET /api/projects/{id}` - Get project by ID
-- `POST /api/projects` - Create project
-- `PUT /api/projects/{id}` - Update project
-- `DELETE /api/projects/{id}` - Delete project
+## Known Gaps
 
-### Orders (Project Items)
-- `GET /api/orders` - Get all orders
-- `GET /api/orders/{id}` - Get order by ID
-- `POST /api/orders?project_id={id}` - Create order
-- `PUT /api/orders/{id}` - Update order
-- `DELETE /api/orders/{id}` - Delete order
-
-### Customers
-- `GET /api/customers` - Get all customers
-- `GET /api/customers/{id}` - Get customer by ID
-- `POST /api/customers` - Create customer
-- `PUT /api/customers/{id}` - Update customer
-- `DELETE /api/customers/{id}` - Delete customer
-
-### Vendors
-- `GET /api/vendors` - Get all vendors
-- `GET /api/vendors/{id}` - Get vendor by ID
-- `POST /api/vendors` - Create vendor
-- `PUT /api/vendors/{id}` - Update vendor
-- `DELETE /api/vendors/{id}` - Delete vendor
-
-## Database Setup
-
-The database tables are created automatically when the app starts. For custom migrations, use Alembic.
-
-## Development Features
-
-- **Auto-reload**: API reloads on file changes in development
-- **Swagger Documentation**: Interactive API documentation at `/docs`
-- **CORS**: Enabled for frontend communication
-- **Error Handling**: Proper HTTP status codes and error messages
-- **Validation**: Request/response validation with Pydantic
-
-## Next Steps
-
-- Add authentication (JWT tokens)
-- Implement database migrations with Alembic
-- Add request logging and monitoring
-- Create seed data for development
-- Add file upload/export functionality
-- Write unit and integration tests
-
-## Troubleshooting
-
-### Database Connection Error
-- Ensure PostgreSQL/Supabase is running
-- Verify DATABASE_URL in .env
-- If your DB provider gives a `postgres://...` URL, the backend normalizes it automatically
-- Check username and password
-
-### Import Errors
-- Ensure you've installed all dependencies: `pip install -r requirements.txt`
-- Make sure you're in the backend directory
-- Check that PYTHONPATH includes the project root
+- Frontend session handling is still client-storage based and needs hardening
+- Test coverage is still thin outside the current backend and Playwright workflow slices
+- Local build and test success still depend on the correct Python and Node versions being installed

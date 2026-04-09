@@ -55,10 +55,15 @@ interface StoreValue {
   updateProjectItem: (
     projectId: string,
     itemId: string,
-    patch: Partial<Pick<ProjectItem, "quantity" | "waste_pct" | "unit_cost" | "order_status" | "po_number" | "purchase_notes" | "notes">>,
+    patch: Partial<Pick<ProjectItem, "quantity" | "waste_pct" | "unit_cost" | "order_status" | "po_number" | "purchase_notes" | "expected_delivery_at" | "carrier" | "tracking_number" | "tracking_url" | "notes">>,
   ) => Promise<void>;
 
   createProject: (name: string, customerId: string) => Promise<Project | null>;
+  updateProject: (projectId: string, data: Partial<Project>) => Promise<Project>;
+  duplicateProject: (
+    projectId: string,
+    options?: { name?: string; includeItems?: boolean },
+  ) => Promise<Project | null>;
   createMaterial: (data: MaterialCreate) => Promise<Material>;
   updateMaterial: (id: string, data: Partial<MaterialCreate>) => Promise<Material>;
   deleteMaterial: (id: string) => Promise<void>;
@@ -256,7 +261,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     async (
       projectId: string,
       itemId: string,
-      patch: Partial<Pick<ProjectItem, "quantity" | "waste_pct" | "unit_cost" | "order_status" | "po_number" | "purchase_notes" | "notes">>,
+      patch: Partial<Pick<ProjectItem, "quantity" | "waste_pct" | "unit_cost" | "order_status" | "po_number" | "purchase_notes" | "expected_delivery_at" | "carrier" | "tracking_number" | "tracking_url" | "notes">>,
     ) => {
       const updated = await projectItemsApi.update(projectId, itemId, patch);
 
@@ -284,6 +289,32 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
       setProjects((prev) => [...prev, { ...created, items: created.items ?? [] }]);
       return created;
+    },
+    [],
+  );
+
+  const updateProject = useCallback(async (projectId: string, data: Partial<Project>) => {
+    const updated = await projectsApi.update(projectId, data);
+    setProjects((prev) =>
+      prev.map((project) =>
+        project.id === projectId ? { ...updated, items: updated.items ?? project.items } : project,
+      ),
+    );
+    return updated;
+  }, []);
+
+  const duplicateProject = useCallback(
+    async (
+      projectId: string,
+      options?: { name?: string; includeItems?: boolean },
+    ) => {
+      const response = await projectsApi.duplicate(projectId, {
+        name: options?.name,
+        include_items: options?.includeItems ?? true,
+      });
+
+      setProjects((prev) => [response.project, ...prev]);
+      return response.project;
     },
     [],
   );
@@ -351,6 +382,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       removeItemFromProject,
       updateProjectItem,
       createProject,
+      updateProject,
+      duplicateProject,
       createMaterial,
       updateMaterial,
       deleteMaterial,
@@ -376,6 +409,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       removeItemFromProject,
       updateProjectItem,
       createProject,
+      updateProject,
+      duplicateProject,
       createMaterial,
       updateMaterial,
       deleteMaterial,

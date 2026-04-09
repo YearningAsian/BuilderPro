@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from app.core.config import API_V1_STR, PROJECT_NAME, PROJECT_VERSION, ALLOWED_ORIGINS
-from app.api import auth, materials, projects, orders, customers, vendors
+from app.api import auth, materials, projects, orders, customers, vendors, search
 from app.db.base import SessionLocal
 
 # Initialize FastAPI app
@@ -31,6 +31,7 @@ app.include_router(projects.router, prefix=API_V1_STR)
 app.include_router(orders.router, prefix=API_V1_STR)
 app.include_router(customers.router, prefix=API_V1_STR)
 app.include_router(vendors.router, prefix=API_V1_STR)
+app.include_router(search.router, prefix=API_V1_STR)
 
 
 @app.get("/")

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, Suspense, useEffect, useMemo, useState } from "react";
+import { persistSession } from "@/lib/auth";
 
 type FormErrors = {
   email?: string;
@@ -128,27 +129,16 @@ function SignInPageContent() {
     try {
       const auth = await signInRequest(email, password);
 
-      const sessionData = JSON.stringify({
+      const sessionData = {
         email: auth.email.trim().toLowerCase(),
         role: auth.role,
         accessToken: auth.access_token,
         tokenType: auth.token_type,
         workspaceId: auth.workspace_id || undefined,
         workspaceName: auth.workspace_name || undefined,
-        signedInAt: new Date().toISOString(),
-      });
+      };
 
-      if (rememberSession) {
-        localStorage.setItem("builderpro_session", sessionData);
-        sessionStorage.removeItem("builderpro_session");
-        document.cookie = `builderpro_auth=1; Path=/; Max-Age=${60 * 60 * 24 * 14}; SameSite=Lax`;
-        document.cookie = `builderpro_role=${auth.role}; Path=/; Max-Age=${60 * 60 * 24 * 14}; SameSite=Lax`;
-      } else {
-        sessionStorage.setItem("builderpro_session", sessionData);
-        localStorage.removeItem("builderpro_session");
-        document.cookie = "builderpro_auth=1; Path=/; SameSite=Lax";
-        document.cookie = `builderpro_role=${auth.role}; Path=/; SameSite=Lax`;
-      }
+      persistSession(sessionData, rememberSession);
 
       const params = new URLSearchParams(window.location.search);
       const requestedPath = params.get("next");

@@ -10,7 +10,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -23,7 +23,7 @@ from app.core.config import (
     SUPABASE_URL,
 )
 from app.db.base import get_db
-from app.models.models import AuditLog, User, Workspace, WorkspaceInvite, WorkspaceMember
+from app.models.models import AuditLog, Material, Project, User, Workspace, WorkspaceInvite, WorkspaceMember
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -47,6 +47,13 @@ class SessionInfoResponse(BaseModel):
     email: str
     workspace_id: str | None = None
     workspace_name: str | None = None
+
+
+class SessionWorkspaceSummary(BaseModel):
+    workspace_id: str
+    workspace_name: str
+    role: Literal["admin", "user"]
+    is_active: bool
 
 
 class CompanySignUpRequest(BaseModel):
@@ -79,6 +86,17 @@ class CreateInviteResponse(BaseModel):
     expires_at: str
 
 
+class WorkspaceInviteSummary(BaseModel):
+    id: UUID
+    workspace_id: UUID
+    invited_email: str
+    invite_token: str
+    invited_by_user_id: UUID
+    expires_at: datetime
+    created_at: datetime
+    is_expired: bool
+
+
 class JoinInviteRequest(BaseModel):
     invite_token: str
     full_name: str
@@ -97,6 +115,36 @@ class JoinInviteResponse(BaseModel):
 
 
 class SignOutResponse(BaseModel):
+    message: str
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+    redirect_to: str | None = None
+
+
+class ForgotPasswordResponse(BaseModel):
+    message: str
+
+
+class VerifyRecoveryRequest(BaseModel):
+    token: str | None = None
+    token_hash: str | None = None
+    email: str | None = None
+
+
+class VerifyRecoveryResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int | None = None
+
+
+class ResetPasswordRequest(BaseModel):
+    access_token: str
+    new_password: str
+
+
+class ResetPasswordResponse(BaseModel):
     message: str
 
 
@@ -122,6 +170,25 @@ class AuditLogEntry(BaseModel):
     actor_email: str | None = None
     details: dict | None = None
     created_at: datetime
+
+
+class WorkspaceProfileUpdateRequest(BaseModel):
+    name: str
+
+
+class WorkspaceProfileResponse(BaseModel):
+    workspace_id: UUID
+    workspace_name: str
+
+
+class WorkspaceBillingSummaryResponse(BaseModel):
+    workspace_id: UUID
+    member_count: int
+    material_count: int
+    active_project_count: int
+    draft_project_count: int
+    monthly_estimate_total: float
+    plan_name: str
 
 
 def _ensure_supabase_config() -> None:
@@ -277,7 +344,41 @@ def _build_workspace_name_for_user(db: Session, user: User) -> str:
     return candidate
 
 
-def _membership_role_for_session(db: Session, user: User) -> tuple[str, WorkspaceMember | None, bool]:
+def _get_requested_workspace_membership(
+    db: Session,
+    user: User,
+    requested_workspace_id: str | UUID | None,
+) -> WorkspaceMember | None:
+    if requested_workspace_id in {None, ""}:
+        return None
+
+    try:
+        workspace_id = requested_workspace_id if isinstance(requested_workspace_id, UUID) else UUID(str(requested_workspace_id))
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Invalid workspace selection.",
+        ) from exc
+
+    membership = _get_workspace_membership(db, user.id, workspace_id)
+    if not membership:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not a member of the requested workspace.",
+        )
+
+    return membership
+
+
+def _membership_role_for_session(
+    db: Session,
+    user: User,
+    requested_workspace_id: str | UUID | None = None,
+) -> tuple[str, WorkspaceMember | None, bool]:
+    requested_membership = _get_requested_workspace_membership(db, user, requested_workspace_id)
+    if requested_membership:
+        return requested_membership.role, requested_membership, False
+
     membership = (
         db.query(WorkspaceMember)
         .filter(WorkspaceMember.user_id == user.id)
@@ -412,7 +513,11 @@ def _current_user_email_from_token(authorization: str | None) -> str:
     return _normalize_email(email)
 
 
-def _resolve_session_user(db: Session, authorization: str | None) -> tuple[User, str, str, WorkspaceMember | None]:
+def _resolve_session_user(
+    db: Session,
+    authorization: str | None,
+    requested_workspace_id: str | None = None,
+) -> tuple[User, str, str, WorkspaceMember | None]:
     email = _current_user_email_from_token(authorization)
 
     user = db.query(User).filter(func.lower(User.email) == email).first()
@@ -420,7 +525,7 @@ def _resolve_session_user(db: Session, authorization: str | None) -> tuple[User,
         user = _get_or_create_user(db, email=email, full_name=None, role="user")
         db.commit()
 
-    role, membership, session_repaired = _membership_role_for_session(db, user)
+    role, membership, session_repaired = _membership_role_for_session(db, user, requested_workspace_id)
     if session_repaired:
         db.commit()
 
@@ -430,16 +535,18 @@ def _resolve_session_user(db: Session, authorization: str | None) -> tuple[User,
 def get_current_user(
     db: Session = Depends(get_db),
     authorization: str | None = Header(default=None),
+    x_workspace_id: str | None = Header(default=None, alias="X-Workspace-Id"),
 ) -> User:
-    user, _, _, _ = _resolve_session_user(db, authorization)
+    user, _, _, _ = _resolve_session_user(db, authorization, x_workspace_id)
     return user
 
 
 def get_current_workspace_id(
     db: Session = Depends(get_db),
     authorization: str | None = Header(default=None),
+    x_workspace_id: str | None = Header(default=None, alias="X-Workspace-Id"),
 ):
-    _, _, _, membership = _resolve_session_user(db, authorization)
+    _, _, _, membership = _resolve_session_user(db, authorization, x_workspace_id)
     if not membership or not membership.workspace_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -531,6 +638,24 @@ def _serialize_audit_event(event: AuditLog) -> AuditLogEntry:
     )
 
 
+def _serialize_workspace_invite(invite: WorkspaceInvite) -> WorkspaceInviteSummary:
+    now = datetime.now(timezone.utc)
+    expires_at = invite.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+
+    return WorkspaceInviteSummary(
+        id=invite.id,
+        workspace_id=invite.workspace_id,
+        invited_email=invite.invited_email,
+        invite_token=invite.invite_token,
+        invited_by_user_id=invite.invited_by_user_id,
+        expires_at=invite.expires_at,
+        created_at=invite.created_at,
+        is_expired=expires_at < now,
+    )
+
+
 def _clear_auth_cookies(response: Response) -> None:
     response.delete_cookie("builderpro_auth", path="/")
     response.delete_cookie("builderpro_role", path="/")
@@ -607,12 +732,93 @@ def sign_out(response: Response, authorization: str | None = Header(default=None
     return SignOutResponse(message="Signed out successfully")
 
 
+@router.post("/forgot-password", response_model=ForgotPasswordResponse)
+def forgot_password(payload: ForgotPasswordRequest):
+    email = _normalize_email(payload.email)
+    if not email:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Email is required.")
+
+    request_payload: dict[str, str] = {"email": email}
+    if payload.redirect_to and payload.redirect_to.strip():
+        request_payload["redirect_to"] = payload.redirect_to.strip()
+
+    _supabase_request("POST", "/auth/v1/recover", payload=request_payload)
+    return ForgotPasswordResponse(
+        message="If an account exists for that email, we sent password reset instructions.",
+    )
+
+
+@router.post("/verify-recovery", response_model=VerifyRecoveryResponse)
+def verify_recovery(payload: VerifyRecoveryRequest):
+    token = payload.token.strip() if payload.token else ""
+    token_hash = payload.token_hash.strip() if payload.token_hash else ""
+    email = _normalize_email(payload.email) if payload.email else None
+
+    if not token and not token_hash:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="A recovery token or token hash is required.",
+        )
+
+    verify_payload: dict[str, str] = {"type": "recovery"}
+    if token_hash:
+        verify_payload["token_hash"] = token_hash
+    else:
+        verify_payload["token"] = token
+
+    if email:
+        verify_payload["email"] = email
+
+    auth = _supabase_request("POST", "/auth/v1/verify", payload=verify_payload)
+    access_token = auth.get("access_token")
+    if not isinstance(access_token, str) or not access_token.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Recovery token could not be verified.",
+        )
+
+    expires_in_value = auth.get("expires_in")
+    expires_in = expires_in_value if isinstance(expires_in_value, int) else None
+
+    return VerifyRecoveryResponse(
+        access_token=access_token,
+        token_type=auth.get("token_type", "bearer"),
+        expires_in=expires_in,
+    )
+
+
+@router.post("/reset-password", response_model=ResetPasswordResponse)
+def reset_password(payload: ResetPasswordRequest):
+    access_token = payload.access_token.strip()
+    new_password = payload.new_password
+
+    if not access_token:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Recovery access token is required.",
+        )
+    if len(new_password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Password must be at least 8 characters.",
+        )
+
+    _supabase_request(
+        "PUT",
+        "/auth/v1/user",
+        payload={"password": new_password},
+        bearer_token=access_token,
+    )
+    return ResetPasswordResponse(message="Your password has been updated successfully.")
+
+
 @router.get("/me", response_model=SessionInfoResponse)
 def get_session_info(
     db: Session = Depends(get_db),
     authorization: str | None = Header(default=None),
+    x_workspace_id: str | None = Header(default=None, alias="X-Workspace-Id"),
 ):
-    _, email, role, membership = _resolve_session_user(db, authorization)
+    _, email, role, membership = _resolve_session_user(db, authorization, x_workspace_id)
 
     workspace_name = None
     workspace_id = None
@@ -628,6 +834,123 @@ def get_session_info(
         email=email,
         workspace_id=workspace_id,
         workspace_name=workspace_name,
+    )
+
+
+@router.get("/workspaces", response_model=list[SessionWorkspaceSummary])
+def list_session_workspaces(
+    db: Session = Depends(get_db),
+    authorization: str | None = Header(default=None),
+    x_workspace_id: str | None = Header(default=None, alias="X-Workspace-Id"),
+):
+    user, _, _, active_membership = _resolve_session_user(db, authorization, x_workspace_id)
+
+    memberships = (
+        db.query(WorkspaceMember, Workspace)
+        .join(Workspace, Workspace.id == WorkspaceMember.workspace_id)
+        .filter(WorkspaceMember.user_id == user.id)
+        .order_by(WorkspaceMember.created_at.asc(), func.lower(Workspace.name).asc())
+        .all()
+    )
+
+    active_workspace_id = str(active_membership.workspace_id) if active_membership else None
+    return [
+        SessionWorkspaceSummary(
+            workspace_id=str(membership.workspace_id),
+            workspace_name=workspace.name,
+            role=membership.role,
+            is_active=str(membership.workspace_id) == active_workspace_id,
+        )
+        for membership, workspace in memberships
+    ]
+
+
+@router.patch("/workspace", response_model=WorkspaceProfileResponse)
+def update_workspace_profile(
+    payload: WorkspaceProfileUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_workspace_id=Depends(get_current_workspace_id),
+):
+    _require_workspace_admin(db, current_user, current_workspace_id)
+
+    next_name = payload.name.strip()
+    if not next_name:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Workspace name is required.",
+        )
+
+    workspace = db.query(Workspace).filter(Workspace.id == current_workspace_id).first()
+    if not workspace:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found.")
+
+    duplicate = (
+        db.query(Workspace)
+        .filter(func.lower(Workspace.name) == next_name.lower(), Workspace.id != workspace.id)
+        .first()
+    )
+    if duplicate:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A workspace with this name already exists.",
+        )
+
+    previous_name = workspace.name
+    workspace.name = next_name
+    db.add(workspace)
+    _record_audit_event(
+        db,
+        workspace_id=current_workspace_id,
+        user_id=current_user.id,
+        action="workspace.profile_updated",
+        resource_type="workspace",
+        resource_id=str(workspace.id),
+        details={"previous_name": previous_name, "workspace_name": next_name},
+    )
+    db.commit()
+    db.refresh(workspace)
+
+    return WorkspaceProfileResponse(workspace_id=workspace.id, workspace_name=workspace.name)
+
+
+@router.get("/workspace/billing-summary", response_model=WorkspaceBillingSummaryResponse)
+def get_workspace_billing_summary(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_workspace_id=Depends(get_current_workspace_id),
+):
+    _require_workspace_admin(db, current_user, current_workspace_id)
+
+    workspace = db.query(Workspace).filter(Workspace.id == current_workspace_id).first()
+    if not workspace:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found.")
+
+    member_count = db.query(WorkspaceMember).filter(WorkspaceMember.workspace_id == current_workspace_id).count()
+    material_count = db.query(Material).filter(Material.workspace_id == current_workspace_id).count()
+    active_project_count = (
+        db.query(Project)
+        .filter(Project.workspace_id == current_workspace_id, Project.status == "active")
+        .count()
+    )
+    draft_project_count = (
+        db.query(Project)
+        .filter(Project.workspace_id == current_workspace_id, Project.status == "draft")
+        .count()
+    )
+
+    monthly_estimate_total = 0.0
+    for project in db.query(Project).filter(Project.workspace_id == current_workspace_id).all():
+        monthly_estimate_total += sum(float(item.line_subtotal) for item in project.items)
+
+    return WorkspaceBillingSummaryResponse(
+        workspace_id=workspace.id,
+        member_count=member_count,
+        material_count=material_count,
+        active_project_count=active_project_count,
+        draft_project_count=draft_project_count,
+        monthly_estimate_total=monthly_estimate_total,
+        plan_name="BuilderPro Standard",
     )
 
 
@@ -883,6 +1206,73 @@ def create_invite(
         invited_email=invited_email,
         expires_at=expires_at.isoformat(),
     )
+
+
+@router.get("/invites", response_model=list[WorkspaceInviteSummary])
+def list_workspace_invites(
+    include_expired: bool = Query(default=False),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_workspace_id=Depends(get_current_workspace_id),
+):
+    _require_workspace_admin(db, current_user, current_workspace_id)
+
+    invites = (
+        db.query(WorkspaceInvite)
+        .filter(
+            WorkspaceInvite.workspace_id == current_workspace_id,
+            WorkspaceInvite.accepted_at.is_(None),
+        )
+        .order_by(WorkspaceInvite.created_at.desc())
+        .all()
+    )
+
+    summaries = [_serialize_workspace_invite(invite) for invite in invites]
+    if include_expired:
+        return summaries
+
+    return [invite for invite in summaries if not invite.is_expired]
+
+
+@router.delete("/invites/{invite_id}", status_code=status.HTTP_204_NO_CONTENT)
+def revoke_workspace_invite(
+    invite_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_workspace_id=Depends(get_current_workspace_id),
+):
+    _require_workspace_admin(db, current_user, current_workspace_id)
+
+    try:
+        invite_lookup_id = UUID(str(invite_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid invite id.") from exc
+
+    invite = (
+        db.query(WorkspaceInvite)
+        .filter(
+            WorkspaceInvite.id == invite_lookup_id,
+            WorkspaceInvite.workspace_id == current_workspace_id,
+        )
+        .first()
+    )
+    if not invite:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invite not found.")
+
+    if invite.accepted_at is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Invite has already been accepted.")
+
+    _record_audit_event(
+        db,
+        workspace_id=current_workspace_id,
+        user_id=current_user.id,
+        action="member.invite_revoked",
+        resource_type="workspace_invite",
+        resource_id=str(invite.id),
+        details={"invited_email": invite.invited_email},
+    )
+    db.delete(invite)
+    db.commit()
 
 
 @router.post("/join-invite", response_model=JoinInviteResponse)

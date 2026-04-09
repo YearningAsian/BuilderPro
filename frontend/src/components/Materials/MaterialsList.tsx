@@ -1,12 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MATERIAL_CATEGORIES } from "@/data/seed";
 import { useDebounce } from "@/hooks/useDebounce";
 import { useStore } from "@/hooks/useStore";
 import { getActiveSession } from "@/lib/auth";
 import { formatCurrency, formatPercent } from "@/lib/format";
-import type { Material, MaterialCreate, SortConfig } from "@/types";
+import { materialsApi } from "@/services/api";
+import type {
+  Material,
+  MaterialAttachment,
+  MaterialCreate,
+  MaterialPriceHistoryEntry,
+  SortConfig,
+} from "@/types";
 import { materialCreateSchema } from "@/types/schemas";
 
 type MaterialSortKey = "name" | "category" | "unit_type" | "unit_cost" | "sku";
@@ -38,6 +45,12 @@ const EMPTY_FORM: MaterialFormState = {
   is_taxable: true,
   default_waste_pct: "0",
 };
+
+function formatDateTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.valueOf())) return value;
+  return date.toLocaleString();
+}
 
 function toFormState(material?: Material | null): MaterialFormState {
   if (!material) return EMPTY_FORM;
@@ -89,6 +102,7 @@ export function MaterialsList() {
     createMaterial,
     updateMaterial,
     deleteMaterial,
+    refreshData,
   } = useStore();
 
   const [sessionRole, setSessionRole] = useState<"admin" | "user" | null>(null);
@@ -98,17 +112,72 @@ export function MaterialsList() {
   const [sort, setSort] = useState<SortConfig<MaterialSortKey> | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editingMaterialId, setEditingMaterialId] = useState<string | null>(null);
+  const [selectedMaterialId, setSelectedMaterialId] = useState<string | null>(null);
   const [form, setForm] = useState<MaterialFormState>(EMPTY_FORM);
+  const [attachmentName, setAttachmentName] = useState("");
+  const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [formError, setFormError] = useState("");
   const [formStatus, setFormStatus] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [isLoadingPriceHistory, setIsLoadingPriceHistory] = useState(false);
+  const [isLoadingAttachments, setIsLoadingAttachments] = useState(false);
+  const [priceHistory, setPriceHistory] = useState<MaterialPriceHistoryEntry[]>([]);
+  const [attachments, setAttachments] = useState<MaterialAttachment[]>([]);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const debouncedQuery = useDebounce(query, 250);
   const isAdmin = sessionRole === "admin";
+  const selectedMaterial = useMemo(
+    () => (selectedMaterialId ? materials.find((material) => material.id === selectedMaterialId) ?? null : null),
+    [materials, selectedMaterialId],
+  );
 
   useEffect(() => {
     setSessionRole(getActiveSession()?.role ?? null);
   }, []);
+
+  useEffect(() => {
+    if (!selectedMaterialId) {
+      setPriceHistory([]);
+      setAttachments([]);
+      setAttachmentName("");
+      setAttachmentFile(null);
+      return;
+    }
+
+    let active = true;
+    setFormError("");
+
+    const loadMaterialDetailData = async () => {
+      setIsLoadingPriceHistory(true);
+      setIsLoadingAttachments(true);
+      try {
+        const [nextHistory, nextAttachments] = await Promise.all([
+          materialsApi.listPriceHistory(selectedMaterialId, 50),
+          materialsApi.listAttachments(selectedMaterialId),
+        ]);
+
+        if (!active) return;
+        setPriceHistory(nextHistory);
+        setAttachments(nextAttachments);
+      } catch (error) {
+        if (!active) return;
+        setFormError(error instanceof Error ? error.message : "Unable to load material history.");
+      } finally {
+        if (active) {
+          setIsLoadingPriceHistory(false);
+          setIsLoadingAttachments(false);
+        }
+      }
+    };
+
+    void loadMaterialDetailData();
+
+    return () => {
+      active = false;
+    };
+  }, [selectedMaterialId]);
 
   const toggleSort = useCallback((key: MaterialSortKey) => {
     setSort((prev) => {
@@ -248,8 +317,85 @@ export function MaterialsList() {
       if (editingMaterialId === material.id) {
         closeEditor();
       }
+      if (selectedMaterialId === material.id) {
+        setSelectedMaterialId(null);
+      }
     } catch (error) {
       setFormError(error instanceof Error ? error.message : "Unable to delete material.");
+    }
+  };
+
+  const triggerImportPicker = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleCsvImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    setFormError("");
+    setFormStatus("");
+    setIsImporting(true);
+
+    try {
+      const summary = await materialsApi.importCsv(file);
+      await refreshData();
+
+      const headline = `CSV import complete: ${summary.created} created, ${summary.updated} updated, ${summary.skipped} skipped.`;
+      if (summary.errors.length > 0) {
+        const preview = summary.errors.slice(0, 3).map((entry) => `Row ${entry.row}: ${entry.message}`).join(" ");
+        setFormError(`${headline} ${preview}`);
+      } else {
+        setFormStatus(headline);
+      }
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "Unable to import CSV.");
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  const handleAddAttachment = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selectedMaterial || !attachmentFile) {
+      setFormError("Select a file before uploading an attachment.");
+      return;
+    }
+
+    setFormError("");
+    setFormStatus("");
+
+    try {
+      const created = await materialsApi.uploadAttachment(
+        selectedMaterial.id,
+        attachmentFile,
+        attachmentName.trim() || undefined,
+      );
+      setAttachments((prev) => [created, ...prev]);
+      setAttachmentName("");
+      setAttachmentFile(null);
+      setFormStatus("Attachment added.");
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "Unable to add attachment.");
+    }
+  };
+
+  const handleDeleteAttachment = async (attachment: MaterialAttachment) => {
+    if (!selectedMaterial) return;
+
+    const confirmed = window.confirm(`Remove attachment ${attachment.name}?`);
+    if (!confirmed) return;
+
+    setFormError("");
+    setFormStatus("");
+
+    try {
+      await materialsApi.deleteAttachment(selectedMaterial.id, attachment.id);
+      setAttachments((prev) => prev.filter((entry) => entry.id !== attachment.id));
+      setFormStatus("Attachment removed.");
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "Unable to remove attachment.");
     }
   };
 
@@ -264,13 +410,30 @@ export function MaterialsList() {
         </div>
 
         {isAdmin && (
-          <button
-            type="button"
-            onClick={openCreateForm}
-            className="rounded-lg bg-orange-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-orange-600"
-          >
-            Add material
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv,text/csv"
+              onChange={handleCsvImport}
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={triggerImportPicker}
+              disabled={isImporting}
+              className="rounded-lg border border-orange-300 px-4 py-2.5 text-sm font-semibold text-orange-700 hover:bg-orange-50 disabled:opacity-70"
+            >
+              {isImporting ? "Importing CSV..." : "Import CSV"}
+            </button>
+            <button
+              type="button"
+              onClick={openCreateForm}
+              className="rounded-lg bg-orange-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-orange-600"
+            >
+              Add material
+            </button>
+          </div>
         )}
       </div>
 
@@ -553,13 +716,15 @@ export function MaterialsList() {
               <th>Vendor</th>
               <th>Waste %</th>
               <th>Taxable</th>
+              <th>Updated</th>
+              <th>Details</th>
               {isAdmin && <th>Actions</th>}
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={isAdmin ? 9 : 8} className="text-center py-10 text-gray-400">
+                <td colSpan={isAdmin ? 11 : 10} className="text-center py-10 text-gray-400">
                   No materials match your filters.
                 </td>
               </tr>
@@ -589,6 +754,16 @@ export function MaterialsList() {
                         <span className="text-gray-400 text-xs">No</span>
                       )}
                     </td>
+                    <td className="text-xs text-gray-500">{formatDateTime(material.updated_at)}</td>
+                    <td>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedMaterialId(material.id)}
+                        className="rounded-md border border-orange-200 px-2.5 py-1 text-xs font-medium text-orange-700 hover:bg-orange-50"
+                      >
+                        View
+                      </button>
+                    </td>
                     {isAdmin && (
                       <td>
                         <div className="flex flex-wrap gap-2">
@@ -616,6 +791,120 @@ export function MaterialsList() {
           </tbody>
         </table>
       </div>
+
+      {selectedMaterial && (
+        <section className="card p-5 space-y-5">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">{selectedMaterial.name} details</h2>
+              <p className="text-sm text-gray-600">
+                Track recent price updates and keep reference links for this material.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSelectedMaterialId(null)}
+              className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+            >
+              Close
+            </button>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="space-y-3 rounded-lg border border-gray-200 p-4">
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-600">Price history</h3>
+              {isLoadingPriceHistory ? (
+                <p className="text-sm text-gray-500">Loading price history...</p>
+              ) : priceHistory.length === 0 ? (
+                <p className="text-sm text-gray-500">No tracked price changes yet.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {priceHistory.map((entry) => (
+                    <li key={entry.id} className="rounded-md border border-gray-100 bg-gray-50 p-3 text-sm">
+                      <p className="font-medium text-gray-900">
+                        {formatCurrency(entry.new_unit_cost)}
+                        {entry.previous_unit_cost !== null && (
+                          <span className="ml-2 text-gray-500">
+                            (from {formatCurrency(entry.previous_unit_cost)})
+                          </span>
+                        )}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {formatDateTime(entry.changed_at)}
+                        {entry.source ? ` • ${entry.source}` : ""}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <div className="space-y-3 rounded-lg border border-gray-200 p-4">
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-600">Attachments</h3>
+              {isAdmin && (
+                <form className="grid gap-2" onSubmit={handleAddAttachment}>
+                  <input
+                    value={attachmentName}
+                    onChange={(event) => setAttachmentName(event.target.value)}
+                    className="rounded-md border border-gray-300 px-3 py-2 text-sm"
+                    placeholder="Optional display name"
+                  />
+                  <input
+                    type="file"
+                    onChange={(event) => setAttachmentFile(event.target.files?.[0] ?? null)}
+                    className="rounded-md border border-gray-300 px-3 py-2 text-sm"
+                    aria-label="Attachment file"
+                  />
+                  <button
+                    type="submit"
+                    className="rounded-md bg-orange-500 px-3 py-2 text-sm font-medium text-white hover:bg-orange-600"
+                  >
+                    Upload attachment
+                  </button>
+                </form>
+              )}
+
+              {isLoadingAttachments ? (
+                <p className="text-sm text-gray-500">Loading attachments...</p>
+              ) : attachments.length === 0 ? (
+                <p className="text-sm text-gray-500">No attachments yet.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {attachments.map((attachment) => (
+                    <li key={attachment.id} className="rounded-md border border-gray-100 bg-gray-50 p-3 text-sm">
+                      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <a
+                            href={attachment.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="font-medium text-orange-700 hover:underline"
+                          >
+                            {attachment.name}
+                          </a>
+                          <p className="text-xs text-gray-500">
+                            {formatDateTime(attachment.uploaded_at)}
+                            {attachment.size_bytes !== null ? ` • ${attachment.size_bytes} bytes` : ""}
+                          </p>
+                        </div>
+                        {isAdmin && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteAttachment(attachment)}
+                            className="rounded-md border border-red-200 px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
     </div>
   );
 }

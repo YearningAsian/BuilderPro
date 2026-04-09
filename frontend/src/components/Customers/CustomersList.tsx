@@ -1,10 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useStore } from "@/hooks/useStore";
 import { getActiveSession } from "@/lib/auth";
 import { formatDate, truncate } from "@/lib/format";
 import type { Customer, CustomerCreate } from "@/types";
+import { customerCreateSchema } from "@/types/schemas";
 
 type CustomerFormState = {
   name: string;
@@ -47,6 +49,7 @@ export function CustomersList() {
   const [query, setQuery] = useState("");
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editingCustomerId, setEditingCustomerId] = useState<string | null>(null);
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [form, setForm] = useState<CustomerFormState>(EMPTY_FORM);
   const [formError, setFormError] = useState("");
   const [formStatus, setFormStatus] = useState("");
@@ -80,6 +83,13 @@ export function CustomersList() {
     () => new Set(projects.map((project) => project.customer_id)).size,
     [projects],
   );
+  const selectedCustomer = useMemo(
+    () =>
+      selectedCustomerId
+        ? customers.find((customer) => customer.id === selectedCustomerId) ?? null
+        : null,
+    [customers, selectedCustomerId],
+  );
 
   const openCreateForm = () => {
     setEditingCustomerId(null);
@@ -109,11 +119,6 @@ export function CustomersList() {
     setFormError("");
     setFormStatus("");
 
-    if (!form.name.trim()) {
-      setFormError("Customer name is required.");
-      return;
-    }
-
     const payload: CustomerCreate = {
       name: form.name.trim(),
       email: form.email.trim() || null,
@@ -121,16 +126,22 @@ export function CustomersList() {
       address: form.address.trim() || null,
       notes: form.notes.trim() || null,
     };
+    const validated = customerCreateSchema.safeParse(payload);
+    if (!validated.success) {
+      setFormError(validated.error.issues[0]?.message ?? "Please correct the customer details.");
+      return;
+    }
 
     setIsSaving(true);
     try {
       if (editingCustomerId) {
-        await updateCustomer(editingCustomerId, payload);
+        await updateCustomer(editingCustomerId, validated.data);
         setFormStatus("Customer updated successfully.");
       } else {
-        await createCustomer(payload);
+        const created = await createCustomer(validated.data);
         setFormStatus("Customer created successfully.");
         setForm(EMPTY_FORM);
+        setSelectedCustomerId(created.id);
       }
     } catch (error) {
       setFormError(error instanceof Error ? error.message : "Unable to save customer.");
@@ -151,6 +162,9 @@ export function CustomersList() {
       setFormStatus(`${customer.name} was removed.`);
       if (editingCustomerId === customer.id) {
         closeEditor();
+      }
+      if (selectedCustomerId === customer.id) {
+        setSelectedCustomerId(null);
       }
     } catch (error) {
       setFormError(error instanceof Error ? error.message : "Unable to delete customer.");
@@ -267,13 +281,14 @@ export function CustomersList() {
               <th>Address</th>
               <th>Projects</th>
               <th>Last added</th>
+              <th>Details</th>
               {isAdmin && <th>Action</th>}
             </tr>
           </thead>
           <tbody>
             {filteredCustomers.length === 0 ? (
               <tr>
-                <td colSpan={isAdmin ? 6 : 5} className="py-12 text-center text-gray-500">
+                <td colSpan={isAdmin ? 7 : 6} className="py-12 text-center text-gray-500">
                   No customers found yet.
                 </td>
               </tr>
@@ -284,7 +299,9 @@ export function CustomersList() {
                   <tr key={customer.id}>
                     <td>
                       <div>
-                        <p className="font-medium text-gray-900">{customer.name}</p>
+                        <Link href={`/customers/${customer.id}`} className="font-medium text-gray-900 hover:text-orange-600">
+                          {customer.name}
+                        </Link>
                         <p className="text-xs text-gray-500">#{customer.id.slice(0, 8)}</p>
                       </div>
                     </td>
@@ -302,6 +319,15 @@ export function CustomersList() {
                       </div>
                     </td>
                     <td className="text-sm text-gray-500">{formatDate(customer.created_at)}</td>
+                    <td>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedCustomerId(customer.id)}
+                        className="rounded-md border border-orange-200 px-2.5 py-1 text-xs font-medium text-orange-700 hover:bg-orange-50"
+                      >
+                        View
+                      </button>
+                    </td>
                     {isAdmin && (
                       <td>
                         <div className="flex flex-wrap gap-2">
@@ -321,6 +347,94 @@ export function CustomersList() {
           </tbody>
         </table>
       </div>
+
+      {selectedCustomer && (
+        <section className="card p-5 space-y-5">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">{selectedCustomer.name} details</h2>
+              <p className="text-sm text-gray-600">
+                Review contact info, linked projects, and intake notes for this customer.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Link
+                href={`/customers/${selectedCustomer.id}`}
+                className="rounded-lg border border-orange-300 px-3 py-2 text-sm text-orange-700 hover:bg-orange-50"
+              >
+                Open full page
+              </Link>
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={() => openEditForm(selectedCustomer)}
+                  className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  Edit customer
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setSelectedCustomerId(null)}
+                className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="space-y-3 rounded-lg border border-gray-200 p-4">
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-600">Contact details</h3>
+              <dl className="space-y-3 text-sm">
+                <div>
+                  <dt className="text-gray-500">Email</dt>
+                  <dd className="font-medium text-gray-900">{selectedCustomer.email || "No email on file"}</dd>
+                </div>
+                <div>
+                  <dt className="text-gray-500">Phone</dt>
+                  <dd className="font-medium text-gray-900">{selectedCustomer.phone || "No phone on file"}</dd>
+                </div>
+                <div>
+                  <dt className="text-gray-500">Address</dt>
+                  <dd className="font-medium text-gray-900">{selectedCustomer.address || "No address on file"}</dd>
+                </div>
+                <div>
+                  <dt className="text-gray-500">Created</dt>
+                  <dd className="font-medium text-gray-900">{formatDate(selectedCustomer.created_at)}</dd>
+                </div>
+              </dl>
+            </div>
+
+            <div className="space-y-3 rounded-lg border border-gray-200 p-4">
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-600">Linked projects</h3>
+              {projects.filter((project) => project.customer_id === selectedCustomer.id).length === 0 ? (
+                <p className="text-sm text-gray-500">No linked projects yet.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {projects
+                    .filter((project) => project.customer_id === selectedCustomer.id)
+                    .map((project) => (
+                      <li key={project.id} className="rounded-md border border-gray-100 bg-gray-50 p-3 text-sm">
+                        <p className="font-medium text-gray-900">{project.name}</p>
+                        <p className="text-xs text-gray-500">
+                          {project.status} • Updated {formatDate(project.updated_at)}
+                        </p>
+                      </li>
+                    ))}
+                </ul>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-gray-200 p-4">
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-600">Notes</h3>
+            <p className="mt-2 text-sm text-gray-700 whitespace-pre-wrap">
+              {selectedCustomer.notes || "No notes saved for this customer."}
+            </p>
+          </div>
+        </section>
+      )}
     </div>
   );
 }
