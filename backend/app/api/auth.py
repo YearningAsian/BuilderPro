@@ -6,6 +6,7 @@ from urllib.request import Request, urlopen
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel
+from typing import Optional, Tuple
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -26,8 +27,8 @@ class SignInResponse(BaseModel):
     token_type: str
     role: str
     email: str
-    workspace_id: str | None = None
-    workspace_name: str | None = None
+    workspace_id: Optional[str] = None
+    workspace_name: Optional[str] = None
 
 
 class CompanySignUpRequest(BaseModel):
@@ -38,7 +39,7 @@ class CompanySignUpRequest(BaseModel):
 
 
 class CompanySignUpResponse(BaseModel):
-    access_token: str | None = None
+    access_token: Optional[str] = None
     token_type: str = "bearer"
     role: str = "admin"
     email: str
@@ -68,7 +69,7 @@ class JoinInviteRequest(BaseModel):
 
 
 class JoinInviteResponse(BaseModel):
-    access_token: str | None = None
+    access_token: Optional[str] = None
     token_type: str = "bearer"
     role: str = "user"
     email: str
@@ -85,7 +86,7 @@ def _ensure_supabase_config() -> None:
         )
 
 
-def _supabase_request(method: str, path: str, payload: dict | None = None, bearer_token: str | None = None) -> dict:
+def _supabase_request(method: str, path: str, payload: Optional[dict] = None, bearer_token: Optional[str] = None) -> dict:
     _ensure_supabase_config()
 
     url = f"{SUPABASE_URL.rstrip('/')}{path}"
@@ -135,7 +136,7 @@ def _normalize_email(email: str) -> str:
     return email.strip().lower()
 
 
-def _get_or_create_user(db: Session, email: str, full_name: str | None, role: str) -> User:
+def _get_or_create_user(db: Session, email: str, full_name: Optional[str], role: str) -> User:
     normalized = _normalize_email(email)
     existing = db.query(User).filter(func.lower(User.email) == normalized).first()
 
@@ -158,7 +159,7 @@ def _get_or_create_user(db: Session, email: str, full_name: str | None, role: st
     return user
 
 
-def _membership_role_for_signin(db: Session, user: User) -> tuple[str, WorkspaceMember | None]:
+def _membership_role_for_signin(db: Session, user: User) -> Tuple[str, Optional[WorkspaceMember]]:
     membership = (
         db.query(WorkspaceMember)
         .filter(WorkspaceMember.user_id == user.id)
@@ -171,7 +172,7 @@ def _membership_role_for_signin(db: Session, user: User) -> tuple[str, Workspace
     return (user.role if user.role in {"admin", "user"} else "user"), None
 
 
-def _extract_bearer_token(authorization: str | None) -> str:
+def _extract_bearer_token(authorization: Optional[str]) -> str:
     if not authorization:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing Authorization header.")
 
@@ -182,7 +183,7 @@ def _extract_bearer_token(authorization: str | None) -> str:
     return parts[1].strip()
 
 
-def _current_user_email_from_token(authorization: str | None) -> str:
+def _current_user_email_from_token(authorization: Optional[str]) -> str:
     access_token = _extract_bearer_token(authorization)
     profile = _supabase_request("GET", "/auth/v1/user", bearer_token=access_token)
     email = profile.get("email")
@@ -291,7 +292,7 @@ def sign_up_company(payload: CompanySignUpRequest, db: Session = Depends(get_db)
 def create_invite(
     payload: CreateInviteRequest,
     db: Session = Depends(get_db),
-    authorization: str | None = Header(default=None),
+    authorization: Optional[str] = Header(default=None),
 ):
     inviter_email = _current_user_email_from_token(authorization)
 
