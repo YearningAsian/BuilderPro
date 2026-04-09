@@ -5,7 +5,7 @@ import json
 import secrets
 import time
 from datetime import datetime, timedelta, timezone
-from typing import Literal
+from typing import Optional, Literal
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 from uuid import UUID
@@ -38,15 +38,15 @@ class SignInResponse(BaseModel):
     token_type: str
     role: str
     email: str
-    workspace_id: str | None = None
-    workspace_name: str | None = None
+    workspace_id: Optional[str] = None
+    workspace_name: Optional[str] = None
 
 
 class SessionInfoResponse(BaseModel):
     role: str
     email: str
-    workspace_id: str | None = None
-    workspace_name: str | None = None
+    workspace_id: Optional[str] = None
+    workspace_name: Optional[str] = None
 
 
 class CompanySignUpRequest(BaseModel):
@@ -57,7 +57,7 @@ class CompanySignUpRequest(BaseModel):
 
 
 class CompanySignUpResponse(BaseModel):
-    access_token: str | None = None
+    access_token: Optional[str] = None
     token_type: str = "bearer"
     role: str = "admin"
     email: str
@@ -87,7 +87,7 @@ class JoinInviteRequest(BaseModel):
 
 
 class JoinInviteResponse(BaseModel):
-    access_token: str | None = None
+    access_token: Optional[str] = None
     token_type: str = "bearer"
     role: str = "user"
     email: str
@@ -104,7 +104,7 @@ class WorkspaceMemberSummary(BaseModel):
     id: UUID
     user_id: UUID
     email: str
-    full_name: str | None = None
+    full_name: Optional[str] = None
     role: Literal["admin", "user"]
     created_at: datetime
 
@@ -117,10 +117,10 @@ class AuditLogEntry(BaseModel):
     id: UUID
     action: str
     resource_type: str
-    resource_id: str | None = None
-    user_id: UUID | None = None
-    actor_email: str | None = None
-    details: dict | None = None
+    resource_id: Optional[str] = None
+    user_id: Optional[UUID] = None
+    actor_email: Optional[str] = None
+    details: Optional[dict] = None
     created_at: datetime
 
 
@@ -135,9 +135,9 @@ def _ensure_supabase_config() -> None:
 def _supabase_request(
     method: str,
     path: str,
-    payload: dict | None = None,
-    bearer_token: str | None = None,
-    api_key: str | None = None,
+    payload: Optional[dict] = None,
+    bearer_token: Optional[str] = None,
+    api_key: Optional[str] = None,
 ) -> dict:
     _ensure_supabase_config()
 
@@ -211,7 +211,7 @@ def _create_local_access_token(email: str) -> str:
     return f"dev.{payload_segment}.{signature}"
 
 
-def _decode_local_access_token(token: str) -> str | None:
+def _decode_local_access_token(token: str) -> Optional[str]:
     if not token.startswith("dev."):
         return None
 
@@ -237,7 +237,7 @@ def _decode_local_access_token(token: str) -> str | None:
     return None
 
 
-def _get_or_create_user(db: Session, email: str, full_name: str | None, role: str) -> User:
+def _get_or_create_user(db: Session, email: str, full_name: Optional[str], role: str) -> User:
     normalized = _normalize_email(email)
     existing = db.query(User).filter(func.lower(User.email) == normalized).first()
 
@@ -277,7 +277,7 @@ def _build_workspace_name_for_user(db: Session, user: User) -> str:
     return candidate
 
 
-def _membership_role_for_session(db: Session, user: User) -> tuple[str, WorkspaceMember | None, bool]:
+def _membership_role_for_session(db: Session, user: User) -> tuple[str, Optional[WorkspaceMember], bool]:
     membership = (
         db.query(WorkspaceMember)
         .filter(WorkspaceMember.user_id == user.id)
@@ -311,13 +311,17 @@ def _membership_role_for_session(db: Session, user: User) -> tuple[str, Workspac
     return "admin", membership, True
 
 
-def _register_supabase_user_with_session(email: str, password: str, full_name: str) -> tuple[str | None, str, bool]:
+def _register_supabase_user_with_session(email: str, password: str, full_name: str) -> tuple[Optional[str], str, bool]:
     token_type = "bearer"
 
-    def local_fallback_session() -> tuple[str | None, str, bool]:
+    def local_fallback_session() -> tuple[Optional[str], str, bool]:
         if ENABLE_LOCAL_AUTH_FALLBACK:
             return _create_local_access_token(email), token_type, False
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many signup attempts. Please try again shortly.")
+
+    # If Supabase is not configured at all, use local fallback immediately.
+    if not SUPABASE_URL or not (SUPABASE_KEY or SUPABASE_ADMIN_KEY):
+        return local_fallback_session()
 
     try:
         _supabase_request(
@@ -372,7 +376,7 @@ def _register_supabase_user_with_session(email: str, password: str, full_name: s
     return access_token, token_type, requires_email_confirmation
 
 
-def _extract_bearer_token(authorization: str | None) -> str:
+def _extract_bearer_token(authorization: Optional[str]) -> str:
     if not authorization:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing Authorization header.")
 
@@ -383,7 +387,7 @@ def _extract_bearer_token(authorization: str | None) -> str:
     return parts[1].strip()
 
 
-def _current_user_email_from_token(authorization: str | None) -> str:
+def _current_user_email_from_token(authorization: Optional[str]) -> str:
     access_token = _extract_bearer_token(authorization)
 
     local_email = _decode_local_access_token(access_token)
@@ -399,7 +403,7 @@ def _current_user_email_from_token(authorization: str | None) -> str:
     return _normalize_email(email)
 
 
-def _resolve_session_user(db: Session, authorization: str | None) -> tuple[User, str, str, WorkspaceMember | None]:
+def _resolve_session_user(db: Session, authorization: Optional[str]) -> tuple[User, str, str, Optional[WorkspaceMember]]:
     email = _current_user_email_from_token(authorization)
 
     user = db.query(User).filter(func.lower(User.email) == email).first()
@@ -416,7 +420,7 @@ def _resolve_session_user(db: Session, authorization: str | None) -> tuple[User,
 
 def get_current_user(
     db: Session = Depends(get_db),
-    authorization: str | None = Header(default=None),
+    authorization: Optional[str] = Header(default=None),
 ) -> User:
     user, _, _, _ = _resolve_session_user(db, authorization)
     return user
@@ -424,7 +428,7 @@ def get_current_user(
 
 def get_current_workspace_id(
     db: Session = Depends(get_db),
-    authorization: str | None = Header(default=None),
+    authorization: Optional[str] = Header(default=None),
 ):
     _, _, _, membership = _resolve_session_user(db, authorization)
     if not membership or not membership.workspace_id:
@@ -435,7 +439,7 @@ def get_current_workspace_id(
     return membership.workspace_id
 
 
-def _get_workspace_membership(db: Session, user_id, workspace_id) -> WorkspaceMember | None:
+def _get_workspace_membership(db: Session, user_id, workspace_id) -> Optional[WorkspaceMember]:
     return (
         db.query(WorkspaceMember)
         .filter(WorkspaceMember.workspace_id == workspace_id, WorkspaceMember.user_id == user_id)
@@ -482,8 +486,8 @@ def _record_audit_event(
     user_id,
     action: str,
     resource_type: str,
-    resource_id: str | None = None,
-    details: dict | None = None,
+    resource_id: Optional[str] = None,
+    details: Optional[dict] = None,
 ) -> AuditLog:
     event = AuditLog(
         workspace_id=workspace_id,
@@ -532,14 +536,21 @@ def sign_in(payload: SignInRequest, db: Session = Depends(get_db)):
     if not payload.password.strip():
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Password is required.")
 
-    auth = _supabase_request(
-        "POST",
-        "/auth/v1/token?grant_type=password",
-        payload={"email": email, "password": payload.password},
-    )
+    # Use local token when Supabase is not configured.
+    if not SUPABASE_URL or not (SUPABASE_KEY or SUPABASE_ADMIN_KEY):
+        if not ENABLE_LOCAL_AUTH_FALLBACK:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Supabase auth is not configured on the backend.")
+        access_token = _create_local_access_token(email)
+        token_type = "bearer"
+    else:
+        auth = _supabase_request(
+            "POST",
+            "/auth/v1/token?grant_type=password",
+            payload={"email": email, "password": payload.password},
+        )
 
-    access_token = auth.get("access_token")
-    token_type = auth.get("token_type", "bearer")
+        access_token = auth.get("access_token")
+        token_type = auth.get("token_type", "bearer")
 
     if not access_token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password.")
@@ -573,10 +584,10 @@ def sign_in(payload: SignInRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/signout", response_model=SignOutResponse)
-def sign_out(response: Response, authorization: str | None = Header(default=None)):
+def sign_out(response: Response, authorization: Optional[str] = Header(default=None)):
     # Sign-out should be idempotent for frontend simplicity.
     # If the client has a bearer token, ask Supabase to invalidate that session.
-    access_token: str | None = None
+    access_token: Optional[str] = None
     if authorization:
         try:
             access_token = _extract_bearer_token(authorization)
@@ -597,7 +608,7 @@ def sign_out(response: Response, authorization: str | None = Header(default=None
 @router.get("/me", response_model=SessionInfoResponse)
 def get_session_info(
     db: Session = Depends(get_db),
-    authorization: str | None = Header(default=None),
+    authorization: Optional[str] = Header(default=None),
 ):
     _, email, role, membership = _resolve_session_user(db, authorization)
 
@@ -816,7 +827,7 @@ def sign_up_company(payload: CompanySignUpRequest, db: Session = Depends(get_db)
 def create_invite(
     payload: CreateInviteRequest,
     db: Session = Depends(get_db),
-    authorization: str | None = Header(default=None),
+    authorization: Optional[str] = Header(default=None),
 ):
     inviter_email = _current_user_email_from_token(authorization)
 
@@ -824,7 +835,12 @@ def create_invite(
     if not inviter_user:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Inviter profile is not registered.")
 
-    workspace = db.query(Workspace).filter(Workspace.id == payload.workspace_id).first()
+    try:
+        workspace_lookup_id = UUID(str(payload.workspace_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid workspace_id.") from exc
+
+    workspace = db.query(Workspace).filter(Workspace.id == workspace_lookup_id).first()
     if not workspace:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found.")
 
