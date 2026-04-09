@@ -11,7 +11,15 @@ from sqlalchemy.orm import Session
 from app.api.auth import get_current_user, get_current_workspace_id
 from app.db.base import get_db
 from app.models.models import AuditLog, Material, Project, ProjectItem, User, Vendor
-from app.schemas.schemas import ProjectItem as ProjectItemSchema, ProjectItemCreate, ProjectItemUpdate
+from app.schemas.schemas import (
+    ProjectItem as ProjectItemSchema,
+    ProjectItemCreate,
+    ProjectItemUpdate,
+    PurchaseOrder as PurchaseOrderSchema,
+    PurchaseOrderCreate,
+    PurchaseOrderLine,
+    PurchaseOrderUpdate,
+)
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 
@@ -54,6 +62,107 @@ class BulkOrderStatusUpdateRequest(BaseModel):
 class BulkOrderStatusUpdateResponse(BaseModel):
     updated_count: int
     order_ids: list[UUID]
+
+
+def _resolve_purchase_order_status(items: list[ProjectItem]) -> str:
+    statuses = {item.order_status for item in items}
+    if statuses == {"received"}:
+        return "received"
+    if "ordered" in statuses:
+        return "ordered"
+    if statuses == {"cancelled"}:
+        return "cancelled"
+    return "draft"
+
+
+def _build_purchase_order_summary(po_number: str, vendor: Vendor, rows: list[tuple[ProjectItem, Project, Material]]) -> PurchaseOrderSchema:
+    items = [item for item, _, _ in rows]
+    expected_delivery_at = max(
+        (item.expected_delivery_at for item in items if item.expected_delivery_at is not None),
+        default=None,
+    )
+    ordered_at = min((item.ordered_at for item in items if item.ordered_at is not None), default=None)
+    received_at = max((item.received_at for item in items if item.received_at is not None), default=None)
+    updated_at = max(item.updated_at for item in items)
+    total_amount = sum(item.line_subtotal for item in items)
+    purchase_notes = next((item.purchase_notes for item in items if item.purchase_notes), None)
+    carrier = next((item.carrier for item in items if item.carrier), None)
+    tracking_number = next((item.tracking_number for item in items if item.tracking_number), None)
+    tracking_url = next((item.tracking_url for item in items if item.tracking_url), None)
+
+    lines = [
+        PurchaseOrderLine(
+            id=item.id,
+            project_id=project.id,
+            project_name=project.name,
+            material_id=material.id,
+            material_name=material.name,
+            quantity=item.quantity,
+            total_qty=item.total_qty,
+            unit_type=item.unit_type,
+            unit_cost=item.unit_cost,
+            line_subtotal=item.line_subtotal,
+            order_status=item.order_status,
+            notes=item.notes,
+            purchase_notes=item.purchase_notes,
+        )
+        for item, project, material in rows
+    ]
+
+    return PurchaseOrderSchema(
+        po_number=po_number,
+        vendor_id=vendor.id,
+        vendor_name=vendor.name,
+        vendor_email=vendor.email,
+        vendor_phone=vendor.phone,
+        order_status=_resolve_purchase_order_status(items),
+        line_count=len(lines),
+        total_amount=total_amount,
+        expected_delivery_at=expected_delivery_at,
+        carrier=carrier,
+        tracking_number=tracking_number,
+        tracking_url=tracking_url,
+        ordered_at=ordered_at,
+        received_at=received_at,
+        updated_at=updated_at,
+        lines=lines,
+    )
+
+
+def _purchase_order_rows_for_workspace(db: Session, current_workspace_id):
+    return (
+        db.query(ProjectItem, Project, Material, Vendor)
+        .join(Project, Project.id == ProjectItem.project_id)
+        .join(Material, Material.id == ProjectItem.material_id)
+        .join(Vendor, Vendor.id == Material.default_vendor_id)
+        .filter(
+            Project.workspace_id == current_workspace_id,
+            ProjectItem.po_number.isnot(None),
+            Material.default_vendor_id.isnot(None),
+        )
+        .order_by(ProjectItem.updated_at.desc())
+        .all()
+    )
+
+
+def _purchase_order_by_number(
+    db: Session,
+    *,
+    po_number: str,
+    current_workspace_id,
+) -> tuple[PurchaseOrderSchema, list[tuple[ProjectItem, Project, Material, Vendor]]]:
+    normalized_po = po_number.strip()
+    rows = [
+        row
+        for row in _purchase_order_rows_for_workspace(db, current_workspace_id)
+        if row[0].po_number == normalized_po
+    ]
+    if not rows:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Purchase order not found.")
+
+    vendor = rows[0][3]
+    summary_rows = [(item, project, material) for item, project, material, _ in rows]
+    return _build_purchase_order_summary(normalized_po, vendor, summary_rows), rows
 
 
 def _record_order_audit_event(
@@ -354,6 +463,179 @@ def bulk_update_vendor_orders(
     return BulkOrderStatusUpdateResponse(updated_count=len(updated_ids), order_ids=updated_ids)
 
 
+@router.get("/purchase-orders", response_model=list[PurchaseOrderSchema])
+def list_purchase_orders(
+    vendor_id: UUID | None = Query(default=None),
+    status_filter: str | None = Query(default=None, alias="status"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_workspace_id=Depends(get_current_workspace_id),
+):
+    del current_user
+    active_vendor_id = vendor_id if isinstance(vendor_id, UUID) else None
+
+    grouped: dict[str, dict[str, object]] = {}
+    for item, project, material, vendor in _purchase_order_rows_for_workspace(db, current_workspace_id):
+        if active_vendor_id is not None and vendor.id != active_vendor_id:
+            continue
+
+        entry = grouped.setdefault(
+            item.po_number,
+            {
+                "vendor": vendor,
+                "rows": [],
+            },
+        )
+        entry["rows"].append((item, project, material))
+
+    orders = [
+        _build_purchase_order_summary(po_number, entry["vendor"], entry["rows"])
+        for po_number, entry in grouped.items()
+    ]
+
+    if isinstance(status_filter, str):
+        normalized_status = status_filter.lower()
+        orders = [order for order in orders if order.order_status == normalized_status]
+
+    return sorted(orders, key=lambda order: order.updated_at, reverse=True)
+
+
+@router.post("/purchase-orders", response_model=PurchaseOrderSchema, status_code=status.HTTP_201_CREATED)
+def create_purchase_order(
+    payload: PurchaseOrderCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_workspace_id=Depends(get_current_workspace_id),
+):
+    vendor = (
+        db.query(Vendor)
+        .filter(Vendor.id == payload.vendor_id, Vendor.workspace_id == current_workspace_id)
+        .first()
+    )
+    if not vendor:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vendor not found.")
+
+    existing_po = (
+        db.query(ProjectItem.id)
+        .join(Project, Project.id == ProjectItem.project_id)
+        .filter(
+            Project.workspace_id == current_workspace_id,
+            ProjectItem.po_number == payload.po_number,
+        )
+        .first()
+    )
+    if existing_po:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="PO number already exists in this workspace.")
+
+    records = (
+        db.query(ProjectItem, Project, Material)
+        .join(Project, Project.id == ProjectItem.project_id)
+        .join(Material, Material.id == ProjectItem.material_id)
+        .filter(
+            Project.workspace_id == current_workspace_id,
+            ProjectItem.id.in_(payload.item_ids),
+        )
+        .all()
+    )
+    if len(records) != len(payload.item_ids):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="One or more order lines were not found.")
+
+    updated_rows: list[tuple[ProjectItem, Project, Material]] = []
+    for item, project, material in records:
+        if material.default_vendor_id != vendor.id:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="All selected lines must belong to the same vendor.",
+            )
+        if project.status != "active":
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Purchase orders can only be created from active project lines.",
+            )
+        if item.po_number:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="One or more selected lines already belong to a purchase order.",
+            )
+
+        patch = _apply_status_transition({"order_status": "ordered"}, item)
+        item.po_number = payload.po_number
+        item.purchase_notes = payload.purchase_notes
+        item.expected_delivery_at = payload.expected_delivery_at
+        item.carrier = payload.carrier
+        item.tracking_number = payload.tracking_number
+        item.tracking_url = payload.tracking_url
+        for field, value in patch.items():
+            setattr(item, field, value)
+        db.add(item)
+        updated_rows.append((item, project, material))
+
+    _record_order_audit_event(
+        db,
+        workspace_id=current_workspace_id,
+        user_id=current_user.id,
+        action="orders.purchase_order_created",
+        resource_type="purchase_order",
+        resource_id=payload.po_number,
+        details={
+            "po_number": payload.po_number,
+            "vendor_id": str(vendor.id),
+            "vendor_name": vendor.name,
+            "line_count": len(updated_rows),
+        },
+    )
+    db.commit()
+
+    return _build_purchase_order_summary(payload.po_number, vendor, updated_rows)
+
+
+@router.get("/purchase-orders/{po_number}", response_model=PurchaseOrderSchema)
+def get_purchase_order(
+    po_number: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_workspace_id=Depends(get_current_workspace_id),
+):
+    del current_user
+    summary, _ = _purchase_order_by_number(db, po_number=po_number, current_workspace_id=current_workspace_id)
+    return summary
+
+
+@router.patch("/purchase-orders/{po_number}", response_model=PurchaseOrderSchema)
+def update_purchase_order(
+    po_number: str,
+    payload: PurchaseOrderUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_workspace_id=Depends(get_current_workspace_id),
+):
+    summary, rows = _purchase_order_by_number(db, po_number=po_number, current_workspace_id=current_workspace_id)
+    update_data = payload.model_dump(exclude_unset=True)
+
+    for item, _, _, _ in rows:
+        patch = dict(update_data)
+        if "order_status" in patch:
+            patch = _apply_status_transition(patch, item)
+
+        for field, value in patch.items():
+            setattr(item, field, value)
+        db.add(item)
+
+    _record_order_audit_event(
+        db,
+        workspace_id=current_workspace_id,
+        user_id=current_user.id,
+        action="orders.purchase_order_updated",
+        resource_type="purchase_order",
+        resource_id=summary.po_number,
+        details={"po_number": summary.po_number},
+    )
+    db.commit()
+
+    updated_summary, _ = _purchase_order_by_number(db, po_number=po_number, current_workspace_id=current_workspace_id)
+    return updated_summary
+
+
 @router.get("/vendor/{vendor_id}/po-document", response_class=Response)
 def vendor_purchase_order_document(
     vendor_id: UUID,
@@ -459,6 +741,91 @@ def vendor_purchase_order_document(
   </table>
   <div class=\"totals\">Batch Total: ${total:,.2f}</div>
   <div class=\"controls\"><button onclick=\"window.print()\">Print / Save as PDF</button></div>
+</body>
+</html>
+"""
+
+    return Response(content=html, media_type="text/html")
+
+
+@router.get("/purchase-orders/{po_number}/document", response_class=Response)
+def purchase_order_document(
+    po_number: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_workspace_id=Depends(get_current_workspace_id),
+):
+    summary, rows = _purchase_order_by_number(db, po_number=po_number, current_workspace_id=current_workspace_id)
+    generated_at = datetime.now(timezone.utc).isoformat()
+
+    _record_order_audit_event(
+        db,
+        workspace_id=current_workspace_id,
+        user_id=current_user.id,
+        action="orders.purchase_order_document_generated",
+        resource_type="purchase_order",
+        resource_id=summary.po_number,
+        details={
+            "po_number": summary.po_number,
+            "line_count": summary.line_count,
+            "batch_total": round(float(summary.total_amount), 2),
+        },
+    )
+    db.commit()
+
+    table_rows = "".join(
+        [
+            (
+                "<tr>"
+                f"<td>{escape(project.name)}</td>"
+                f"<td>{escape(material.name)}</td>"
+                f"<td>{escape(str(item.total_qty))} {escape(item.unit_type)}</td>"
+                f"<td>${float(item.unit_cost):,.2f}</td>"
+                f"<td>${float(item.line_subtotal):,.2f}</td>"
+                f"<td>{escape(item.purchase_notes or '')}</td>"
+                "</tr>"
+            )
+            for item, project, material, _ in rows
+        ]
+    )
+
+    html = f"""
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Purchase Order - {escape(summary.po_number)}</title>
+  <style>
+    body {{ font-family: Arial, sans-serif; margin: 24px; color: #1f2937; }}
+    h1 {{ margin-bottom: 4px; }}
+    .meta {{ margin-bottom: 16px; color: #4b5563; }}
+    table {{ width: 100%; border-collapse: collapse; margin-top: 12px; }}
+    th, td {{ border: 1px solid #d1d5db; padding: 8px; text-align: left; font-size: 13px; }}
+    th {{ background: #f3f4f6; }}
+    .totals {{ margin-top: 12px; font-weight: bold; }}
+    .controls {{ margin-top: 16px; }}
+    @media print {{ .controls {{ display: none; }} body {{ margin: 0; }} }}
+  </style>
+</head>
+<body>
+  <h1>Purchase Order {escape(summary.po_number)}</h1>
+  <div class="meta">Vendor: {escape(summary.vendor_name)} | Email: {escape(summary.vendor_email or 'N/A')} | Generated: {escape(generated_at)}</div>
+  <div class="meta">Carrier: {escape(summary.carrier or 'N/A')} | Tracking: {escape(summary.tracking_number or 'N/A')} | ETA: {escape(summary.expected_delivery_at.isoformat() if summary.expected_delivery_at else 'N/A')}</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Project</th>
+        <th>Material</th>
+        <th>Quantity</th>
+        <th>Unit Cost</th>
+        <th>Line Total</th>
+        <th>Notes</th>
+      </tr>
+    </thead>
+    <tbody>{table_rows if table_rows else '<tr><td colspan="6">No matching line items.</td></tr>'}</tbody>
+  </table>
+  <div class="totals">Batch Total: ${float(summary.total_amount):,.2f}</div>
+  <div class="controls"><button onclick="window.print()">Print / Save as PDF</button></div>
 </body>
 </html>
 """

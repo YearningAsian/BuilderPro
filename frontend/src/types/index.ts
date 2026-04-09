@@ -213,6 +213,61 @@ export interface ProjectItemCreate {
   notes?: string | null;
 }
 
+export interface PurchaseOrderLine {
+  id: UUID;
+  project_id: UUID;
+  project_name: string;
+  material_id: UUID;
+  material_name: string;
+  quantity: number;
+  total_qty: number;
+  unit_type: string;
+  unit_cost: number;
+  line_subtotal: number;
+  order_status: OrderStatus;
+  notes: string | null;
+  purchase_notes: string | null;
+}
+
+export interface PurchaseOrder {
+  po_number: string;
+  vendor_id: UUID;
+  vendor_name: string;
+  vendor_email: string | null;
+  vendor_phone: string | null;
+  order_status: OrderStatus;
+  line_count: number;
+  total_amount: number;
+  expected_delivery_at: ISODateString | null;
+  carrier: string | null;
+  tracking_number: string | null;
+  tracking_url: string | null;
+  ordered_at: ISODateString | null;
+  received_at: ISODateString | null;
+  updated_at: ISODateString;
+  lines: PurchaseOrderLine[];
+}
+
+export interface PurchaseOrderCreate {
+  vendor_id: UUID;
+  po_number: string;
+  item_ids: UUID[];
+  purchase_notes?: string | null;
+  expected_delivery_at?: ISODateString | null;
+  carrier?: string | null;
+  tracking_number?: string | null;
+  tracking_url?: string | null;
+}
+
+export interface PurchaseOrderUpdate {
+  purchase_notes?: string | null;
+  expected_delivery_at?: ISODateString | null;
+  carrier?: string | null;
+  tracking_number?: string | null;
+  tracking_url?: string | null;
+  order_status?: Extract<OrderStatus, "ordered" | "received" | "cancelled">;
+}
+
 // ─── Project ─────────────────────────────────────────────────
 export type ProjectStatus = "draft" | "active" | "closed";
 

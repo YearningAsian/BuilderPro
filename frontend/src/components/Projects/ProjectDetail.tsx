@@ -21,7 +21,7 @@ const STATUS_COLORS: Record<ProjectStatus, string> = {
  * - Embedded RecordBuilder for the bill-of-materials
  */
 export function ProjectDetail({ projectId }: { projectId: string }) {
-  const { customers, getProjectById, getCustomerById, updateProject } = useStore();
+  const { customers, isLoading, getProjectById, getCustomerById, updateProject } = useStore();
   const project = getProjectById(projectId);
   const [markupPct, setMarkupPct] = useState(15);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -55,6 +55,27 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
     };
   }, [markupPct, project?.default_tax_pct, project?.items]);
 
+  const purchasingSummary = useMemo(() => {
+    const items = project?.items ?? [];
+    const poNumbers = new Set(items.map((item) => item.po_number).filter(Boolean) as string[]);
+    const orderedCount = items.filter((item) => item.order_status === "ordered").length;
+    const receivedCount = items.filter((item) => item.order_status === "received").length;
+    const draftCount = items.filter((item) => item.order_status === "draft").length;
+    const linesWithPurchaseOrder = items.filter((item) => Boolean(item.po_number)).length;
+    const linesAwaitingPo = items.filter((item) => item.order_status !== "cancelled" && !item.po_number).length;
+    const trackedDeliveries = items.filter((item) => Boolean(item.tracking_number) || Boolean(item.expected_delivery_at)).length;
+
+    return {
+      poCount: poNumbers.size,
+      orderedCount,
+      receivedCount,
+      draftCount,
+      linesWithPurchaseOrder,
+      linesAwaitingPo,
+      trackedDeliveries,
+    };
+  }, [project]);
+
   useEffect(() => {
     if (!project) return;
     setMarkupPct(getProjectMarkupPct(project.id, 15));
@@ -70,6 +91,15 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
       default_waste_pct: String(project.default_waste_pct),
     });
   }, [project]);
+
+  if (isLoading) {
+    return (
+      <div className="p-8 text-center text-gray-400">
+        <p className="text-lg font-medium mb-2 text-gray-900">Loading project...</p>
+        <p className="text-sm text-gray-500">Fetching the latest workspace record.</p>
+      </div>
+    );
+  }
 
   if (!project) {
     return (
@@ -401,6 +431,61 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
             <p className="flex justify-between"><span className="text-gray-500">Items</span><strong>{project.items.length}</strong></p>
             <p className="flex justify-between"><span className="text-gray-500">Tax Amount</span><strong>{formatCurrency(totals.taxAmount)}</strong></p>
             <p className="flex justify-between"><span className="text-gray-500">Markup %</span><strong>{formatPercent(markupPct)}</strong></p>
+          </div>
+        </div>
+      </section>
+
+      <section className="grid gap-4 lg:grid-cols-4">
+        <div className="card p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Purchase Orders</p>
+          <p className="mt-2 text-2xl font-bold text-gray-900">{purchasingSummary.poCount}</p>
+          <p className="text-sm text-gray-500">Distinct PO batches linked to this project</p>
+        </div>
+        <div className="card p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Ordered Lines</p>
+          <p className="mt-2 text-2xl font-bold text-sky-700">{purchasingSummary.orderedCount}</p>
+          <p className="text-sm text-gray-500">{purchasingSummary.receivedCount} already received</p>
+        </div>
+        <div className="card p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Awaiting PO</p>
+          <p className="mt-2 text-2xl font-bold text-amber-700">{purchasingSummary.linesAwaitingPo}</p>
+          <p className="text-sm text-gray-500">{purchasingSummary.draftCount} line(s) still in draft purchasing state</p>
+        </div>
+        <div className="card p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Delivery Tracking</p>
+          <p className="mt-2 text-2xl font-bold text-emerald-700">{purchasingSummary.trackedDeliveries}</p>
+          <p className="text-sm text-gray-500">Lines with ETA or shipment tracking</p>
+        </div>
+      </section>
+
+      <section className="card p-5">
+        <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-800">Purchasing Status</h2>
+            <p className="mt-1 text-sm text-gray-500">
+              Estimate lines now show PO assignment and receiving context directly in the BOM editor. Use the orders workspace to create or manage purchase orders.
+            </p>
+          </div>
+          <Link
+            href="/orders"
+            className="inline-flex items-center justify-center rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            Open Orders Workspace
+          </Link>
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Assigned to PO</p>
+            <p className="mt-2 text-lg font-semibold text-gray-900">{purchasingSummary.linesWithPurchaseOrder} / {project.items.length}</p>
+          </div>
+          <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Received</p>
+            <p className="mt-2 text-lg font-semibold text-gray-900">{purchasingSummary.receivedCount} line(s)</p>
+          </div>
+          <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Needs Purchasing Action</p>
+            <p className="mt-2 text-lg font-semibold text-gray-900">{purchasingSummary.linesAwaitingPo} line(s)</p>
           </div>
         </div>
       </section>

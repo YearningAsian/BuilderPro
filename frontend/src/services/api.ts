@@ -26,6 +26,9 @@ import type {
   WorkspaceRole,
   SearchEntity,
   SearchResponse,
+  PurchaseOrder,
+  PurchaseOrderCreate,
+  PurchaseOrderUpdate,
 } from "@/types";
 
 const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
@@ -356,6 +359,31 @@ function normalizeProject(project: Project): Project {
   };
 }
 
+function normalizePurchaseOrder(order: PurchaseOrder): PurchaseOrder {
+  return {
+    ...order,
+    total_amount: toNumber(order.total_amount),
+    line_count: toNumber(order.line_count),
+    expected_delivery_at: order.expected_delivery_at ?? null,
+    carrier: order.carrier ?? null,
+    tracking_number: order.tracking_number ?? null,
+    tracking_url: order.tracking_url ?? null,
+    ordered_at: order.ordered_at ?? null,
+    received_at: order.received_at ?? null,
+    lines: Array.isArray(order.lines)
+      ? order.lines.map((line) => ({
+          ...line,
+          quantity: toNumber(line.quantity),
+          total_qty: toNumber(line.total_qty),
+          unit_cost: toNumber(line.unit_cost),
+          line_subtotal: toNumber(line.line_subtotal),
+          notes: line.notes ?? null,
+          purchase_notes: line.purchase_notes ?? null,
+        }))
+      : [],
+  };
+}
+
 export const materialsApi = {
   list: async () => (await request<Material[]>(`${BASE}/materials`)).map(normalizeMaterial),
   get: async (id: string) => normalizeMaterial(await request<Material>(`${BASE}/materials/${id}`)),
@@ -449,6 +477,29 @@ export const projectItemsApi = {
 };
 
 export const ordersApi = {
+  listPurchaseOrders: async (params?: { vendor_id?: string; status?: "draft" | "ordered" | "received" | "cancelled" }) => {
+    const query = new URLSearchParams();
+    if (params?.vendor_id) query.set("vendor_id", params.vendor_id);
+    if (params?.status) query.set("status", params.status);
+    const suffix = query.size > 0 ? `?${query.toString()}` : "";
+    return (await request<PurchaseOrder[]>(`${BASE}/orders/purchase-orders${suffix}`)).map(normalizePurchaseOrder);
+  },
+  createPurchaseOrder: async (payload: PurchaseOrderCreate) =>
+    normalizePurchaseOrder(
+      await request<PurchaseOrder>(`${BASE}/orders/purchase-orders`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      })
+    ),
+  updatePurchaseOrder: async (poNumber: string, payload: PurchaseOrderUpdate) =>
+    normalizePurchaseOrder(
+      await request<PurchaseOrder>(`${BASE}/orders/purchase-orders/${encodeURIComponent(poNumber)}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      })
+    ),
+  purchaseOrderDocumentHtml: (poNumber: string) =>
+    requestText(`${BASE}/orders/purchase-orders/${encodeURIComponent(poNumber)}/document`, { method: "GET" }),
   bulkUpdateStatus: (payload: BulkOrdersStatusPayload) =>
     request<BulkOrdersStatusResponse>(`${BASE}/orders/bulk-status`, {
       method: "POST",

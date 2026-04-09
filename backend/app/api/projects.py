@@ -145,6 +145,18 @@ def update_project(
         )
 
     update_data = project.model_dump(exclude_unset=True)
+    if "customer_id" in update_data:
+        customer = (
+            db.query(Customer)
+            .filter(Customer.id == update_data["customer_id"], Customer.workspace_id == current_workspace_id)
+            .first()
+        )
+        if not customer:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Customer not found"
+            )
+
     for field, value in update_data.items():
         setattr(db_project, field, value)
 

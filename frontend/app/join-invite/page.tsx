@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, Suspense, useEffect, useMemo, useState } from "react";
-import { persistSession } from "@/lib/auth";
+import { persistSession, type BuilderProSession } from "@/lib/auth";
 
 type FormErrors = {
   inviteToken?: string;
@@ -141,7 +141,7 @@ function JoinInvitePageContent() {
 
       const requiresEmailConfirmation = Boolean(payload?.requires_email_confirmation);
       const accessToken = payload?.access_token as string | undefined;
-      const role = (payload?.role as string | undefined) || "user";
+      const role: BuilderProSession["role"] = payload?.role === "admin" ? "admin" : "user";
       const workspaceId = (payload?.workspace_id as string | undefined) || "";
       const workspaceName = (payload?.workspace_name as string | undefined) || "";
       const normalizedEmail = email.trim().toLowerCase();

@@ -9,11 +9,15 @@ from sqlalchemy.orm import sessionmaker
 from app.api.orders import (
     BulkOrderStatusUpdateRequest,
     bulk_update_vendor_orders,
+    create_purchase_order,
+    list_purchase_orders,
+    purchase_order_document,
+    update_purchase_order,
     vendor_purchase_order_document,
 )
 from app.db.base import Base
 from app.models.models import AuditLog, Customer, Material, Project, ProjectItem, User, Vendor, Workspace, WorkspaceMember
-from app.schemas.schemas import ProjectItemUpdate
+from app.schemas.schemas import ProjectItemUpdate, PurchaseOrderCreate, PurchaseOrderUpdate
 
 
 class OrdersWorkflowTests(unittest.TestCase):
@@ -150,6 +154,75 @@ class OrdersWorkflowTests(unittest.TestCase):
             )
             self.assertIsNotNone(event)
             self.assertEqual(event.resource_type, "vendor")
+        finally:
+            db.close()
+
+    def test_purchase_order_create_list_update_and_document_flow(self):
+        db = self.make_session()
+        try:
+            owner, workspace, vendor, _, item = self._seed_order_line(db)
+
+            created = create_purchase_order(
+                payload=PurchaseOrderCreate(
+                    vendor_id=vendor.id,
+                    po_number="PO-2026-42",
+                    item_ids=[item.id],
+                    purchase_notes="Deliver to loading dock",
+                    tracking_url="https://carrier.example/track/po-2026-42",
+                ),
+                db=db,
+                current_user=owner,
+                current_workspace_id=workspace.id,
+            )
+
+            self.assertEqual(created.po_number, "PO-2026-42")
+            self.assertEqual(created.order_status, "ordered")
+            self.assertEqual(created.line_count, 1)
+            self.assertEqual(created.lines[0].material_name, "Lumber 2x4")
+
+            db.refresh(item)
+            self.assertEqual(item.po_number, "PO-2026-42")
+            self.assertEqual(item.order_status, "ordered")
+
+            purchase_orders = list_purchase_orders(
+                db=db,
+                current_user=owner,
+                current_workspace_id=workspace.id,
+            )
+            self.assertEqual(len(purchase_orders), 1)
+            self.assertEqual(purchase_orders[0].po_number, "PO-2026-42")
+
+            updated = update_purchase_order(
+                po_number="PO-2026-42",
+                payload=PurchaseOrderUpdate(
+                    carrier=" FedEx  Freight ",
+                    order_status="received",
+                ),
+                db=db,
+                current_user=owner,
+                current_workspace_id=workspace.id,
+            )
+            self.assertEqual(updated.order_status, "received")
+            self.assertEqual(updated.carrier, "FedEx Freight")
+
+            document = purchase_order_document(
+                po_number="PO-2026-42",
+                db=db,
+                current_user=owner,
+                current_workspace_id=workspace.id,
+            )
+            html = document.body.decode("utf-8")
+            self.assertIn("Purchase Order PO-2026-42", html)
+            self.assertIn("Lumber 2x4", html)
+
+            event = (
+                db.query(AuditLog)
+                .filter(AuditLog.workspace_id == workspace.id, AuditLog.action == "orders.purchase_order_created")
+                .order_by(AuditLog.created_at.desc())
+                .first()
+            )
+            self.assertIsNotNone(event)
+            self.assertEqual(event.resource_type, "purchase_order")
         finally:
             db.close()
 

@@ -26,12 +26,13 @@ from app.api.projects import (
     create_project,
     duplicate_project,
     list_projects,
+    update_project,
     project_estimate_document,
 )
 from app.api.vendors import list_vendors
 from app.db.base import Base
 from app.models.models import AuditLog, Customer, Material, Project, ProjectItem, User, Vendor, Workspace, WorkspaceInvite, WorkspaceMember
-from app.schemas.schemas import ProjectCreate, ProjectItemUpdate
+from app.schemas.schemas import ProjectCreate, ProjectItemUpdate, ProjectUpdate
 
 
 class WorkspaceRecoveryTests(unittest.TestCase):
@@ -361,6 +362,86 @@ class WorkspaceRecoveryTests(unittest.TestCase):
                 .first()
             )
             self.assertIsNotNone(audit_event)
+        finally:
+            db.close()
+
+    def test_update_project_allows_customer_change_within_workspace(self):
+        db = self.make_session()
+        try:
+            owner = User(email="owner@example.com", full_name="Owner", role="admin")
+            workspace = Workspace(name="Project Update Workspace")
+            db.add_all([owner, workspace])
+            db.flush()
+
+            original_customer = Customer(name="Original Customer", workspace_id=workspace.id)
+            replacement_customer = Customer(name="Replacement Customer", workspace_id=workspace.id)
+            db.add_all([original_customer, replacement_customer])
+            db.flush()
+
+            db.add(WorkspaceMember(workspace_id=workspace.id, user_id=owner.id, role="admin"))
+            db.flush()
+
+            project = Project(
+                name="Remodel",
+                customer_id=original_customer.id,
+                status="draft",
+                created_by=owner.id,
+                workspace_id=workspace.id,
+            )
+            db.add(project)
+            db.commit()
+
+            updated = update_project(
+                project_id=project.id,
+                project=ProjectUpdate(customer_id=replacement_customer.id, status="active"),
+                db=db,
+                current_user=owner,
+                current_workspace_id=workspace.id,
+            )
+
+            self.assertEqual(updated.customer_id, replacement_customer.id)
+            self.assertEqual(updated.status, "active")
+        finally:
+            db.close()
+
+    def test_update_project_rejects_customer_from_other_workspace(self):
+        db = self.make_session()
+        try:
+            owner = User(email="owner@example.com", full_name="Owner", role="admin")
+            workspace = Workspace(name="Primary Workspace")
+            other_workspace = Workspace(name="Other Workspace")
+            db.add_all([owner, workspace, other_workspace])
+            db.flush()
+
+            original_customer = Customer(name="Original Customer", workspace_id=workspace.id)
+            foreign_customer = Customer(name="Foreign Customer", workspace_id=other_workspace.id)
+            db.add_all([original_customer, foreign_customer])
+            db.flush()
+
+            db.add(WorkspaceMember(workspace_id=workspace.id, user_id=owner.id, role="admin"))
+            db.flush()
+
+            project = Project(
+                name="Remodel",
+                customer_id=original_customer.id,
+                status="draft",
+                created_by=owner.id,
+                workspace_id=workspace.id,
+            )
+            db.add(project)
+            db.commit()
+
+            with self.assertRaises(HTTPException) as context:
+                update_project(
+                    project_id=project.id,
+                    project=ProjectUpdate(customer_id=foreign_customer.id),
+                    db=db,
+                    current_user=owner,
+                    current_workspace_id=workspace.id,
+                )
+
+            self.assertEqual(context.exception.status_code, 404)
+            self.assertEqual(context.exception.detail, "Customer not found")
         finally:
             db.close()
 

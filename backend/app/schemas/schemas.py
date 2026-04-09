@@ -309,6 +309,82 @@ class ProjectItem(ProjectItemBase):
         from_attributes = True
 
 
+class PurchaseOrderLine(BaseModel):
+    id: UUID
+    project_id: UUID
+    project_name: str
+    material_id: UUID
+    material_name: str
+    quantity: Decimal
+    total_qty: Decimal
+    unit_type: str
+    unit_cost: Decimal
+    line_subtotal: Decimal
+    order_status: Literal["draft", "ordered", "received", "cancelled"]
+    notes: Optional[str] = None
+    purchase_notes: Optional[str] = None
+
+
+class PurchaseOrder(BaseModel):
+    po_number: str
+    vendor_id: UUID
+    vendor_name: str
+    vendor_email: Optional[str] = None
+    vendor_phone: Optional[str] = None
+    order_status: Literal["draft", "ordered", "received", "cancelled"]
+    line_count: int
+    total_amount: Decimal
+    expected_delivery_at: Optional[datetime] = None
+    carrier: Optional[str] = None
+    tracking_number: Optional[str] = None
+    tracking_url: Optional[str] = None
+    ordered_at: Optional[datetime] = None
+    received_at: Optional[datetime] = None
+    updated_at: datetime
+    lines: list[PurchaseOrderLine]
+
+
+class PurchaseOrderCreate(BaseModel):
+    vendor_id: UUID
+    po_number: str
+    item_ids: list[UUID]
+    purchase_notes: Optional[str] = None
+    expected_delivery_at: Optional[datetime] = None
+    carrier: Optional[str] = None
+    tracking_number: Optional[str] = None
+    tracking_url: Optional[str] = None
+
+    _carrier_validator = field_validator("carrier", mode="before")(_normalize_carrier)
+    _tracking_url_validator = field_validator("tracking_url", mode="before")(_normalize_tracking_url)
+
+    @field_validator("po_number")
+    @classmethod
+    def po_number_required(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("po_number is required")
+        return normalized
+
+    @field_validator("item_ids")
+    @classmethod
+    def item_ids_required(cls, value: list[UUID]) -> list[UUID]:
+        if not value:
+            raise ValueError("At least one item is required")
+        return value
+
+
+class PurchaseOrderUpdate(BaseModel):
+    expected_delivery_at: Optional[datetime] = None
+    carrier: Optional[str] = None
+    tracking_number: Optional[str] = None
+    tracking_url: Optional[str] = None
+    purchase_notes: Optional[str] = None
+    order_status: Optional[Literal["ordered", "received", "cancelled"]] = None
+
+    _carrier_validator = field_validator("carrier", mode="before")(_normalize_carrier)
+    _tracking_url_validator = field_validator("tracking_url", mode="before")(_normalize_tracking_url)
+
+
 # =====================================================
 # PROJECT SCHEMAS
 # =====================================================
@@ -340,6 +416,7 @@ class ProjectCreate(ProjectBase):
 
 class ProjectUpdate(BaseModel):
     name: Optional[str] = None
+    customer_id: Optional[UUID] = None
     status: Optional[Literal["draft", "active", "closed"]] = None
     default_tax_pct: Optional[Decimal] = None
     default_waste_pct: Optional[Decimal] = None

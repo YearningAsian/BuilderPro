@@ -3,8 +3,15 @@
 import { useCallback, useMemo, useState } from "react";
 import { useStore } from "@/hooks/useStore";
 import { useDebounce } from "@/hooks/useDebounce";
-import { formatCurrency, formatPercent } from "@/lib/format";
+import { formatCurrency, formatDate, formatPercent } from "@/lib/format";
 import type { Material, ProjectItem, SortConfig } from "@/types";
+
+const ORDER_STATUS_STYLES: Record<ProjectItem["order_status"], string> = {
+  draft: "bg-slate-100 text-slate-700",
+  ordered: "bg-sky-100 text-sky-700",
+  received: "bg-emerald-100 text-emerald-700",
+  cancelled: "bg-rose-100 text-rose-700",
+};
 
 // ─── Sub-components ──────────────────────────────────────────
 
@@ -116,6 +123,11 @@ function RecordItemRow({
   const { getMaterialById, updateProjectItem, removeItemFromProject } =
     useStore();
   const material = getMaterialById(item.material_id);
+  const purchasingMeta = [
+    item.po_number ? `PO ${item.po_number}` : null,
+    item.expected_delivery_at ? `ETA ${formatDate(item.expected_delivery_at)}` : null,
+    material?.default_vendor_id ? "Vendor assigned" : "No vendor",
+  ].filter(Boolean);
 
   const handleChange = useCallback(
     (field: "quantity" | "unit_cost" | "waste_pct", raw: string) => {
@@ -134,6 +146,16 @@ function RecordItemRow({
         {material?.sku && (
           <span className="ml-2 text-xs text-gray-400 font-mono">{material.sku}</span>
         )}
+        <div className="mt-1 flex flex-wrap items-center gap-2">
+          <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${ORDER_STATUS_STYLES[item.order_status]}`}>
+            {item.order_status}
+          </span>
+          {purchasingMeta.map((entry) => (
+            <span key={entry} className="text-[11px] text-gray-500">
+              {entry}
+            </span>
+          ))}
+        </div>
       </td>
       <td>
         <input
@@ -279,6 +301,9 @@ export function RecordBuilder({ projectId }: { projectId: string }) {
         <div>
           <p className="text-sm text-gray-500">
             {project.items.length} line item{project.items.length !== 1 ? "s" : ""}
+          </p>
+          <p className="mt-1 text-xs text-gray-400">
+            Purchasing details stay visible here while you edit the estimate.
           </p>
         </div>
         <MaterialSelector onSelect={handleAdd} />

@@ -29,7 +29,7 @@ function toFormState(customer: Customer): CustomerFormState {
 
 export function CustomerDetail({ customerId }: { customerId: string }) {
   const router = useRouter();
-  const { projects, getCustomerById, updateCustomer, deleteCustomer } = useStore();
+  const { projects, isLoading, getCustomerById, updateCustomer, deleteCustomer } = useStore();
   const customer = getCustomerById(customerId);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -67,6 +67,24 @@ export function CustomerDetail({ customerId }: { customerId: string }) {
     () => projects.filter((project) => project.customer_id === customerId),
     [customerId, projects],
   );
+
+  if (isLoading) {
+    return (
+      <div className="p-6 lg:p-8 space-y-4">
+        <nav className="text-sm text-gray-400">
+          <Link href="/customers" className="hover:text-orange-500 transition-colors">
+            Customers
+          </Link>
+          <span className="mx-2">/</span>
+          <span className="text-gray-700">Loading</span>
+        </nav>
+        <div className="card p-6 text-center">
+          <p className="text-lg font-medium text-gray-900">Loading customer...</p>
+          <p className="mt-2 text-sm text-gray-500">Fetching the latest workspace record.</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!customer) {
     return (

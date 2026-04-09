@@ -29,7 +29,7 @@ function toFormState(vendor: Vendor): VendorFormState {
 
 export function VendorDetail({ vendorId }: { vendorId: string }) {
   const router = useRouter();
-  const { materials, getVendorById, updateVendor, deleteVendor } = useStore();
+  const { materials, isLoading, getVendorById, updateVendor, deleteVendor } = useStore();
   const vendor = getVendorById(vendorId);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -67,6 +67,24 @@ export function VendorDetail({ vendorId }: { vendorId: string }) {
     () => materials.filter((material) => material.default_vendor_id === vendorId),
     [materials, vendorId],
   );
+
+  if (isLoading) {
+    return (
+      <div className="p-6 lg:p-8 space-y-4">
+        <nav className="text-sm text-gray-400">
+          <Link href="/vendors" className="hover:text-orange-500 transition-colors">
+            Vendors
+          </Link>
+          <span className="mx-2">/</span>
+          <span className="text-gray-700">Loading</span>
+        </nav>
+        <div className="card p-6 text-center">
+          <p className="text-lg font-medium text-gray-900">Loading vendor...</p>
+          <p className="mt-2 text-sm text-gray-500">Fetching the latest workspace record.</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!vendor) {
     return (

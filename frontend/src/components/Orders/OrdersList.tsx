@@ -1,11 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useStore } from "@/hooks/useStore";
 import { formatCurrency, formatDate, truncate } from "@/lib/format";
 import { ordersApi } from "@/services/api";
-import type { OrderStatus, ProjectStatus } from "@/types";
+import type { OrderStatus, ProjectStatus, PurchaseOrder } from "@/types";
 
 type ProcurementState = "ready" | "needs-vendor" | "planning" | "ordered" | "closed";
 
@@ -94,6 +94,17 @@ export function OrdersList() {
   const [vendorTrackingUrls, setVendorTrackingUrls] = useState<Record<string, string>>({});
   const [batchStatusMessage, setBatchStatusMessage] = useState<string>("");
   const [batchErrorMessage, setBatchErrorMessage] = useState<string>("");
+  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
+  const [isLoadingPurchaseOrders, setIsLoadingPurchaseOrders] = useState(true);
+  const [purchaseOrderError, setPurchaseOrderError] = useState("");
+  const [creatingVendorId, setCreatingVendorId] = useState<string | null>(null);
+  const [poNumbers, setPoNumbers] = useState<Record<string, string>>({});
+  const [poNotes, setPoNotes] = useState<Record<string, string>>({});
+  const [poEtas, setPoEtas] = useState<Record<string, string>>({});
+  const [poCarriers, setPoCarriers] = useState<Record<string, string>>({});
+  const [poTrackingNumbers, setPoTrackingNumbers] = useState<Record<string, string>>({});
+  const [poTrackingUrls, setPoTrackingUrls] = useState<Record<string, string>>({});
+  const [updatingPoNumber, setUpdatingPoNumber] = useState<string | null>(null);
 
   const orderRows = useMemo<OrderRow[]>(() => {
     return projects
@@ -229,6 +240,32 @@ export function OrdersList() {
     return Array.from(batchMap.values()).sort((a, b) => a.vendorName.localeCompare(b.vendorName));
   }, [filteredRows]);
 
+  useEffect(() => {
+    let active = true;
+
+    async function loadPurchaseOrders() {
+      setIsLoadingPurchaseOrders(true);
+      try {
+        const nextOrders = await ordersApi.listPurchaseOrders();
+        if (!active) return;
+        setPurchaseOrders(nextOrders);
+      } catch (error) {
+        if (!active) return;
+        setPurchaseOrderError(error instanceof Error ? error.message : "Unable to load purchase orders.");
+      } finally {
+        if (active) {
+          setIsLoadingPurchaseOrders(false);
+        }
+      }
+    }
+
+    void loadPurchaseOrders();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const shipmentTimeline = useMemo<ShipmentTimelineItem[]>(() => {
     return filteredRows
       .filter(
@@ -344,6 +381,71 @@ export function OrdersList() {
     }
   }
 
+  async function reloadPurchaseOrders() {
+    const nextOrders = await ordersApi.listPurchaseOrders();
+    setPurchaseOrders(nextOrders);
+  }
+
+  async function handleCreatePurchaseOrder(batch: VendorBatch) {
+    const poNumber = (poNumbers[batch.vendorId] ?? "").trim();
+    if (!poNumber) {
+      setPurchaseOrderError(`Enter a PO number for ${batch.vendorName}.`);
+      return;
+    }
+
+    if (batch.readyRows.length === 0) {
+      setPurchaseOrderError(`No ready-to-order lines found for ${batch.vendorName}.`);
+      return;
+    }
+
+    setPurchaseOrderError("");
+    setCreatingVendorId(batch.vendorId);
+
+    try {
+      await ordersApi.createPurchaseOrder({
+        vendor_id: batch.vendorId,
+        po_number: poNumber,
+        item_ids: batch.readyRows.map((row) => row.id),
+        purchase_notes: (poNotes[batch.vendorId] ?? "").trim() || null,
+        expected_delivery_at: toIsoOrNull(poEtas[batch.vendorId] ?? ""),
+        carrier: (poCarriers[batch.vendorId] ?? "").trim() || null,
+        tracking_number: (poTrackingNumbers[batch.vendorId] ?? "").trim() || null,
+        tracking_url: (poTrackingUrls[batch.vendorId] ?? "").trim() || null,
+      });
+      await refreshData();
+      await reloadPurchaseOrders();
+      setBatchStatusMessage(`Created purchase order ${poNumber} for ${batch.vendorName}.`);
+    } catch (error) {
+      setPurchaseOrderError(error instanceof Error ? error.message : `Unable to create PO for ${batch.vendorName}.`);
+    } finally {
+      setCreatingVendorId((current) => (current === batch.vendorId ? null : current));
+    }
+  }
+
+  async function handleUpdatePurchaseOrder(
+    poNumber: string,
+    patch: Partial<{
+      purchase_notes: string | null;
+      expected_delivery_at: string | null;
+      carrier: string | null;
+      tracking_number: string | null;
+      tracking_url: string | null;
+      order_status: "ordered" | "received" | "cancelled";
+    }>,
+  ) {
+    setPurchaseOrderError("");
+    setUpdatingPoNumber(poNumber);
+    try {
+      await ordersApi.updatePurchaseOrder(poNumber, patch);
+      await refreshData();
+      await reloadPurchaseOrders();
+    } catch (error) {
+      setPurchaseOrderError(error instanceof Error ? error.message : `Unable to update ${poNumber}.`);
+    } finally {
+      setUpdatingPoNumber((current) => (current === poNumber ? null : current));
+    }
+  }
+
   function exportVendorBatchCsv(batch: VendorBatch) {
     const escapeCell = (value: string) => `"${value.replace(/"/g, '""')}"`;
 
@@ -414,6 +516,29 @@ export function OrdersList() {
     }
   }
 
+  async function openPurchaseOrderDocument(poNumber: string) {
+    setPurchaseOrderError("");
+
+    try {
+      const html = await ordersApi.purchaseOrderDocumentHtml(poNumber);
+      const popup = window.open("", "_blank", "noopener,noreferrer");
+      if (!popup) {
+        setPurchaseOrderError("Popup blocked. Allow popups and try again to open the PO document.");
+        return;
+      }
+
+      popup.document.open();
+      popup.document.write(html);
+      popup.document.close();
+      popup.document.title = `Purchase Order - ${poNumber}`;
+      popup.focus();
+    } catch (error) {
+      setPurchaseOrderError(
+        error instanceof Error ? error.message : `Unable to generate purchase order document for ${poNumber}.`,
+      );
+    }
+  }
+
   return (
     <div className="p-6 lg:p-8 space-y-6 animate-fade-in">
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
@@ -453,6 +578,252 @@ export function OrdersList() {
           <p className="text-sm text-gray-500">Active lines with a vendor already assigned</p>
         </div>
       </div>
+
+      <section className="card p-5 space-y-5">
+        <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">Purchase Orders</h2>
+            <p className="text-sm text-gray-500">
+              Create grouped purchase orders from ready vendor lines, then track delivery and receiving at the PO level.
+            </p>
+          </div>
+          <div className="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700">
+            {isLoadingPurchaseOrders ? "Loading…" : `${purchaseOrders.length} PO${purchaseOrders.length === 1 ? "" : "s"}`}
+          </div>
+        </div>
+
+        {(purchaseOrderError || batchStatusMessage) && (
+          <div className="space-y-2">
+            {purchaseOrderError && <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{purchaseOrderError}</p>}
+            {batchStatusMessage && <p className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">{batchStatusMessage}</p>}
+          </div>
+        )}
+
+        <div className="grid gap-4 xl:grid-cols-2">
+          {vendorBatches
+            .filter((batch) => batch.readyRows.length > 0)
+            .map((batch) => (
+              <article key={batch.vendorId} className="rounded-xl border border-gray-200 p-4 space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-base font-semibold text-gray-900">{batch.vendorName}</h3>
+                    <p className="text-sm text-gray-500">
+                      {batch.readyRows.length} ready line(s) across {batch.projectCount} project(s)
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
+                    {formatCurrency(batch.readyRows.reduce((sum, row) => sum + row.total, 0))}
+                  </span>
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-2">
+                  <label className="space-y-1 text-sm text-gray-600">
+                    <span className="font-medium text-gray-700">PO number</span>
+                    <input
+                      value={poNumbers[batch.vendorId] ?? ""}
+                      onChange={(event) => setPoNumbers((prev) => ({ ...prev, [batch.vendorId]: event.target.value }))}
+                      placeholder="PO-2026-001"
+                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                    />
+                  </label>
+                  <label className="space-y-1 text-sm text-gray-600">
+                    <span className="font-medium text-gray-700">Expected delivery</span>
+                    <input
+                      type="datetime-local"
+                      value={poEtas[batch.vendorId] ?? ""}
+                      onChange={(event) => setPoEtas((prev) => ({ ...prev, [batch.vendorId]: event.target.value }))}
+                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                    />
+                  </label>
+                  <label className="space-y-1 text-sm text-gray-600">
+                    <span className="font-medium text-gray-700">Carrier</span>
+                    <input
+                      value={poCarriers[batch.vendorId] ?? ""}
+                      onChange={(event) => setPoCarriers((prev) => ({ ...prev, [batch.vendorId]: event.target.value }))}
+                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                    />
+                  </label>
+                  <label className="space-y-1 text-sm text-gray-600">
+                    <span className="font-medium text-gray-700">Tracking number</span>
+                    <input
+                      value={poTrackingNumbers[batch.vendorId] ?? ""}
+                      onChange={(event) => setPoTrackingNumbers((prev) => ({ ...prev, [batch.vendorId]: event.target.value }))}
+                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                    />
+                  </label>
+                  <label className="space-y-1 text-sm text-gray-600 md:col-span-2">
+                    <span className="font-medium text-gray-700">Tracking URL</span>
+                    <input
+                      value={poTrackingUrls[batch.vendorId] ?? ""}
+                      onChange={(event) => setPoTrackingUrls((prev) => ({ ...prev, [batch.vendorId]: event.target.value }))}
+                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                    />
+                  </label>
+                  <label className="space-y-1 text-sm text-gray-600 md:col-span-2">
+                    <span className="font-medium text-gray-700">PO notes</span>
+                    <textarea
+                      rows={3}
+                      value={poNotes[batch.vendorId] ?? ""}
+                      onChange={(event) => setPoNotes((prev) => ({ ...prev, [batch.vendorId]: event.target.value }))}
+                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                    />
+                  </label>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => void handleCreatePurchaseOrder(batch)}
+                  disabled={creatingVendorId === batch.vendorId}
+                  className="rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {creatingVendorId === batch.vendorId ? "Creating PO..." : "Create purchase order"}
+                </button>
+              </article>
+            ))}
+        </div>
+
+        <div className="space-y-4">
+          {purchaseOrders.map((order) => (
+            <article key={order.po_number} className="rounded-xl border border-gray-200 p-4 space-y-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <h3 className="text-base font-semibold text-gray-900">{order.po_number}</h3>
+                  <p className="text-sm text-gray-500">
+                    {order.vendor_name} · {order.line_count} line(s) · Updated {formatDate(order.updated_at)}
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold text-sky-700">
+                    {order.order_status}
+                  </span>
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                    {formatCurrency(order.total_amount)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => void openPurchaseOrderDocument(order.po_number)}
+                    className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  >
+                    Open document
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <label className="space-y-1 text-sm text-gray-600">
+                  <span className="font-medium text-gray-700">ETA</span>
+                  <input
+                    type="datetime-local"
+                    defaultValue={toDatetimeLocalValue(order.expected_delivery_at)}
+                    onBlur={(event) => {
+                      const nextValue = toIsoOrNull(event.target.value);
+                      if (nextValue !== order.expected_delivery_at) {
+                        void handleUpdatePurchaseOrder(order.po_number, { expected_delivery_at: nextValue });
+                      }
+                    }}
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                  />
+                </label>
+                <label className="space-y-1 text-sm text-gray-600">
+                  <span className="font-medium text-gray-700">Carrier</span>
+                  <input
+                    defaultValue={order.carrier ?? ""}
+                    onBlur={(event) => {
+                      const nextValue = event.target.value.trim() || null;
+                      if (nextValue !== (order.carrier ?? null)) {
+                        void handleUpdatePurchaseOrder(order.po_number, { carrier: nextValue });
+                      }
+                    }}
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                  />
+                </label>
+                <label className="space-y-1 text-sm text-gray-600">
+                  <span className="font-medium text-gray-700">Tracking number</span>
+                  <input
+                    defaultValue={order.tracking_number ?? ""}
+                    onBlur={(event) => {
+                      const nextValue = event.target.value.trim() || null;
+                      if (nextValue !== (order.tracking_number ?? null)) {
+                        void handleUpdatePurchaseOrder(order.po_number, { tracking_number: nextValue });
+                      }
+                    }}
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                  />
+                </label>
+                <label className="space-y-1 text-sm text-gray-600">
+                  <span className="font-medium text-gray-700">Status</span>
+                  <select
+                    value={order.order_status}
+                    onChange={(event) => void handleUpdatePurchaseOrder(order.po_number, { order_status: event.target.value as "ordered" | "received" | "cancelled" })}
+                    disabled={updatingPoNumber === order.po_number}
+                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                  >
+                    <option value="ordered">ordered</option>
+                    <option value="received">received</option>
+                    <option value="cancelled">cancelled</option>
+                  </select>
+                </label>
+                <label className="space-y-1 text-sm text-gray-600 md:col-span-2 xl:col-span-4">
+                  <span className="font-medium text-gray-700">Tracking URL</span>
+                  <input
+                    defaultValue={order.tracking_url ?? ""}
+                    onBlur={(event) => {
+                      const nextValue = event.target.value.trim() || null;
+                      if (nextValue !== (order.tracking_url ?? null)) {
+                        void handleUpdatePurchaseOrder(order.po_number, { tracking_url: nextValue });
+                      }
+                    }}
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                  />
+                </label>
+                <label className="space-y-1 text-sm text-gray-600 md:col-span-2 xl:col-span-4">
+                  <span className="font-medium text-gray-700">PO notes</span>
+                  <textarea
+                    rows={3}
+                    defaultValue={order.lines[0]?.purchase_notes ?? ""}
+                    onBlur={(event) => {
+                      const nextValue = event.target.value.trim() || null;
+                      if (nextValue !== (order.lines[0]?.purchase_notes ?? null)) {
+                        void handleUpdatePurchaseOrder(order.po_number, { purchase_notes: nextValue });
+                      }
+                    }}
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                  />
+                </label>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-200 text-left text-gray-500">
+                      <th className="py-2 pr-4 font-medium">Project</th>
+                      <th className="py-2 pr-4 font-medium">Material</th>
+                      <th className="py-2 pr-4 font-medium">Qty</th>
+                      <th className="py-2 pr-4 font-medium">Line total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {order.lines.map((line) => (
+                      <tr key={line.id} className="border-b border-gray-100 text-gray-700">
+                        <td className="py-2 pr-4">{line.project_name}</td>
+                        <td className="py-2 pr-4">{line.material_name}</td>
+                        <td className="py-2 pr-4">{line.total_qty.toFixed(2)} {line.unit_type}</td>
+                        <td className="py-2 pr-4">{formatCurrency(line.line_subtotal)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </article>
+          ))}
+
+          {!isLoadingPurchaseOrders && purchaseOrders.length === 0 && (
+            <div className="rounded-xl border border-dashed border-gray-300 p-6 text-center text-sm text-gray-500">
+              No purchase orders yet. Create one from a vendor batch with ready line items.
+            </div>
+          )}
+        </div>
+      </section>
 
       <div className="card p-4 space-y-4">
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
