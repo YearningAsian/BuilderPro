@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useStore } from "@/hooks/useStore";
 import { useDebounce } from "@/hooks/useDebounce";
 import { formatCurrency, formatDate, formatPercent } from "@/lib/format";
+import { ordersApi } from "@/services/api";
 import type { Material, ProjectItem, SortConfig } from "@/types";
 
 const ORDER_STATUS_STYLES: Record<ProjectItem["order_status"], string> = {
@@ -115,10 +116,16 @@ function RecordItemRow({
   item,
   projectId,
   index,
+  isSelected,
+  canSelectForPo,
+  onToggleSelection,
 }: {
   item: ProjectItem;
   projectId: string;
   index: number;
+  isSelected: boolean;
+  canSelectForPo: boolean;
+  onToggleSelection: (itemId: string) => void;
 }) {
   const { getMaterialById, updateProjectItem, removeItemFromProject } =
     useStore();
@@ -140,6 +147,16 @@ function RecordItemRow({
 
   return (
     <tr className="group">
+      <td>
+        <input
+          type="checkbox"
+          checked={isSelected}
+          disabled={!canSelectForPo}
+          onChange={() => onToggleSelection(item.id)}
+          className="h-4 w-4 rounded border-gray-300 text-orange-500 focus:ring-orange-400 disabled:cursor-not-allowed"
+          aria-label={`Select ${material?.name ?? "line item"} for purchase order`}
+        />
+      </td>
       <td className="text-gray-400 text-xs font-mono">{index + 1}</td>
       <td className="font-medium text-gray-900">
         {material?.name ?? "Unknown"}
@@ -227,10 +244,20 @@ type ItemSortKey = "name" | "quantity" | "unit_cost" | "line_subtotal";
  *  - Remove items
  */
 export function RecordBuilder({ projectId }: { projectId: string }) {
-  const { getProjectById, getMaterialById, addItemToProject } = useStore();
+  const { getProjectById, getMaterialById, getVendorById, addItemToProject, refreshData } = useStore();
   const project = getProjectById(projectId);
 
   const [sort, setSort] = useState<SortConfig<ItemSortKey> | null>(null);
+  const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
+  const [poNumber, setPoNumber] = useState("");
+  const [poNotes, setPoNotes] = useState("");
+  const [poEta, setPoEta] = useState("");
+  const [poCarrier, setPoCarrier] = useState("");
+  const [poTrackingNumber, setPoTrackingNumber] = useState("");
+  const [poTrackingUrl, setPoTrackingUrl] = useState("");
+  const [poError, setPoError] = useState("");
+  const [poStatus, setPoStatus] = useState("");
+  const [isCreatingPo, setIsCreatingPo] = useState(false);
 
   const toggleSort = useCallback((key: ItemSortKey) => {
     setSort((prev) => {
@@ -271,6 +298,129 @@ export function RecordBuilder({ projectId }: { projectId: string }) {
     });
   }, [project, sort, getMaterialById]);
 
+  useEffect(() => {
+    const currentIds = new Set((project?.items ?? []).map((item) => item.id));
+    setSelectedItemIds((prev) => prev.filter((itemId) => currentIds.has(itemId)));
+  }, [project?.items]);
+
+  const selectedItems = useMemo(
+    () => sortedItems.filter((item) => selectedItemIds.includes(item.id)),
+    [selectedItemIds, sortedItems],
+  );
+
+  const selectedMaterials = useMemo(
+    () =>
+      selectedItems.map((item) => ({
+        item,
+        material: getMaterialById(item.material_id),
+      })),
+    [getMaterialById, selectedItems],
+  );
+
+  const selectedVendorIds = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          selectedMaterials
+            .map((entry) => entry.material?.default_vendor_id)
+            .filter((value): value is string => Boolean(value)),
+        ),
+      ),
+    [selectedMaterials],
+  );
+
+  const selectedVendor = selectedVendorIds.length === 1 ? getVendorById(selectedVendorIds[0]) : null;
+  const canCreatePo =
+    Boolean(project?.status === "active") &&
+    selectedItems.length > 0 &&
+    selectedVendorIds.length === 1 &&
+    selectedItems.every((item) => item.order_status === "draft" && !item.po_number);
+
+  const procurementSnapshot = useMemo(() => {
+    const totalReady = sortedItems.filter((item) => {
+      const material = getMaterialById(item.material_id);
+      return item.order_status === "draft" && !item.po_number && Boolean(material?.default_vendor_id);
+    }).length;
+    const withoutVendor = sortedItems.filter((item) => {
+      const material = getMaterialById(item.material_id);
+      return !material?.default_vendor_id;
+    }).length;
+    return { totalReady, withoutVendor };
+  }, [getMaterialById, sortedItems]);
+
+  const toggleItemSelection = useCallback((itemId: string) => {
+    setSelectedItemIds((prev) =>
+      prev.includes(itemId) ? prev.filter((entry) => entry !== itemId) : [...prev, itemId],
+    );
+  }, []);
+
+  const clearPoForm = useCallback(() => {
+    setSelectedItemIds([]);
+    setPoNumber("");
+    setPoNotes("");
+    setPoEta("");
+    setPoCarrier("");
+    setPoTrackingNumber("");
+    setPoTrackingUrl("");
+  }, []);
+
+  const toIsoOrNull = useCallback((value: string): string | null => {
+    if (!value.trim()) return null;
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return parsed.toISOString();
+  }, []);
+
+  const createPurchaseOrderFromSelection = useCallback(async () => {
+    setPoError("");
+    setPoStatus("");
+
+    if (!canCreatePo || !selectedVendor) {
+      setPoError("Select draft line items from a single assigned vendor on an active project.");
+      return;
+    }
+
+    const normalizedPoNumber = poNumber.trim();
+    if (!normalizedPoNumber) {
+      setPoError("PO number is required.");
+      return;
+    }
+
+    setIsCreatingPo(true);
+    try {
+      await ordersApi.createPurchaseOrder({
+        vendor_id: selectedVendor.id,
+        po_number: normalizedPoNumber,
+        item_ids: selectedItems.map((item) => item.id),
+        purchase_notes: poNotes.trim() || null,
+        expected_delivery_at: toIsoOrNull(poEta),
+        carrier: poCarrier.trim() || null,
+        tracking_number: poTrackingNumber.trim() || null,
+        tracking_url: poTrackingUrl.trim() || null,
+      });
+      await refreshData();
+      setPoStatus(`Created ${normalizedPoNumber} for ${selectedVendor.name}.`);
+      clearPoForm();
+    } catch (error) {
+      setPoError(error instanceof Error ? error.message : "Unable to create purchase order.");
+    } finally {
+      setIsCreatingPo(false);
+    }
+  }, [
+    canCreatePo,
+    clearPoForm,
+    poCarrier,
+    poEta,
+    poNotes,
+    poNumber,
+    poTrackingNumber,
+    poTrackingUrl,
+    refreshData,
+    selectedItems,
+    selectedVendor,
+    toIsoOrNull,
+  ]);
+
   // ── Cost summary (passive estimation) ──
   const summary = useMemo(() => {
     if (!project) return { subtotal: 0, wasteCost: 0, taxAmount: 0, total: 0 };
@@ -309,11 +459,96 @@ export function RecordBuilder({ projectId }: { projectId: string }) {
         <MaterialSelector onSelect={handleAdd} />
       </div>
 
+      <div className="card p-4 space-y-4">
+        <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500">Create Purchase Order</h3>
+            <p className="mt-1 text-sm text-gray-600">
+              Select draft lines with the same vendor, assign a PO number, and push them into purchasing without leaving the project.
+            </p>
+          </div>
+          <div className="rounded-lg bg-gray-50 px-3 py-2 text-sm text-gray-700">
+            {procurementSnapshot.totalReady} ready · {procurementSnapshot.withoutVendor} missing vendor
+          </div>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Selected lines</p>
+            <p className="mt-2 text-lg font-semibold text-gray-900">{selectedItems.length}</p>
+            <p className="text-sm text-gray-500">
+              {selectedVendor ? selectedVendor.name : selectedItemIds.length > 0 ? "Mixed or missing vendor" : "No selection"}
+            </p>
+          </div>
+          <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Selected subtotal</p>
+            <p className="mt-2 text-lg font-semibold text-gray-900">
+              {formatCurrency(selectedItems.reduce((sum, item) => sum + item.line_subtotal, 0))}
+            </p>
+            <p className="text-sm text-gray-500">Current selection total</p>
+          </div>
+          <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Project status</p>
+            <p className="mt-2 text-lg font-semibold text-gray-900">{project.status}</p>
+            <p className="text-sm text-gray-500">PO creation requires an active project</p>
+          </div>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <label className="space-y-1 text-sm text-gray-600">
+            <span className="font-medium text-gray-700">PO number</span>
+            <input value={poNumber} onChange={(event) => setPoNumber(event.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm" />
+          </label>
+          <label className="space-y-1 text-sm text-gray-600">
+            <span className="font-medium text-gray-700">Expected delivery</span>
+            <input type="datetime-local" value={poEta} onChange={(event) => setPoEta(event.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm" />
+          </label>
+          <label className="space-y-1 text-sm text-gray-600">
+            <span className="font-medium text-gray-700">Carrier</span>
+            <input value={poCarrier} onChange={(event) => setPoCarrier(event.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm" />
+          </label>
+          <label className="space-y-1 text-sm text-gray-600">
+            <span className="font-medium text-gray-700">Tracking number</span>
+            <input value={poTrackingNumber} onChange={(event) => setPoTrackingNumber(event.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm" />
+          </label>
+          <label className="space-y-1 text-sm text-gray-600 md:col-span-2 xl:col-span-1">
+            <span className="font-medium text-gray-700">Tracking URL</span>
+            <input value={poTrackingUrl} onChange={(event) => setPoTrackingUrl(event.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm" />
+          </label>
+          <label className="space-y-1 text-sm text-gray-600 md:col-span-2 xl:col-span-3">
+            <span className="font-medium text-gray-700">PO notes</span>
+            <textarea rows={3} value={poNotes} onChange={(event) => setPoNotes(event.target.value)} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm" />
+          </label>
+        </div>
+
+        {poError && <p className="text-sm text-red-600">{poError}</p>}
+        {poStatus && <p className="text-sm text-green-700">{poStatus}</p>}
+
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => void createPurchaseOrderFromSelection()}
+            disabled={!canCreatePo || isCreatingPo}
+            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isCreatingPo ? "Creating PO..." : "Create PO from selected lines"}
+          </button>
+          <button
+            type="button"
+            onClick={clearPoForm}
+            className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-white"
+          >
+            Clear selection
+          </button>
+        </div>
+      </div>
+
       {/* Items table */}
       <div className="card overflow-x-auto">
         <table className="bp-table">
           <thead>
             <tr>
+              <th className="w-10"></th>
               <th className="w-10">#</th>
               <th className="cursor-pointer" onClick={() => toggleSort("name")}>
                 Material{sortArrow("name") && <span className="text-orange-500">{sortArrow("name")}</span>}
@@ -336,7 +571,7 @@ export function RecordBuilder({ projectId }: { projectId: string }) {
           <tbody>
             {sortedItems.length === 0 ? (
               <tr>
-                <td colSpan={9} className="text-center py-12 text-gray-400">
+                <td colSpan={10} className="text-center py-12 text-gray-400">
                   No items yet — click <strong>Add Material</strong> to start building your estimate.
                 </td>
               </tr>
@@ -347,6 +582,9 @@ export function RecordBuilder({ projectId }: { projectId: string }) {
                   item={item}
                   projectId={projectId}
                   index={idx}
+                  isSelected={selectedItemIds.includes(item.id)}
+                  canSelectForPo={project.status === "active" && item.order_status === "draft" && !item.po_number}
+                  onToggleSelection={toggleItemSelection}
                 />
               ))
             )}

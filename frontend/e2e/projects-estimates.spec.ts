@@ -116,17 +116,72 @@ test.beforeEach(async ({ page, context }) => {
   });
 
   await page.route("**/api/projects", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify([
-        {
-          ...projectBase,
-          items: [projectItem],
-        },
-      ]),
-    });
+    if (route.request().method() === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([
+          {
+            ...projectBase,
+            items: [projectItem],
+          },
+        ]),
+      });
+      return;
+    }
+
+    await route.fallback();
   });
+});
+
+test("project create posts to backend and routes to the new project", async ({ page }) => {
+  await page.route("**/api/projects", async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([
+          {
+            ...projectBase,
+            items: [projectItem],
+          },
+        ]),
+      });
+      return;
+    }
+
+    if (route.request().method() === "POST") {
+      const body = route.request().postDataJSON() as { name: string; customer_id: string };
+      expect(body.name).toBe("North Addition");
+      expect(body.customer_id).toBe(projectBase.customer_id);
+
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ...projectBase,
+          id: "77777777-7777-7777-7777-777777777777",
+          name: body.name,
+          customer_id: body.customer_id,
+          status: "draft",
+          items: [],
+        }),
+      });
+      return;
+    }
+
+    await route.fallback();
+  });
+
+  await page.goto("/projects");
+  await expect(page.getByRole("heading", { name: "Projects" })).toBeVisible();
+
+  await page.getByRole("button", { name: "New Project" }).click();
+  await page.getByPlaceholder("Project name").fill("North Addition");
+  await page.getByRole("button", { name: "Create" }).click();
+
+  await expect(page).toHaveURL(/\/projects\/77777777-7777-7777-7777-777777777777$/);
+  await expect(page.getByRole("heading", { name: "North Addition" })).toBeVisible();
 });
 
 test("duplicate action posts to duplicate endpoint", async ({ page }) => {

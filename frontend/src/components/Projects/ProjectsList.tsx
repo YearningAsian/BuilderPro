@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useStore } from "@/hooks/useStore";
@@ -25,14 +25,32 @@ export function ProjectsList() {
   const [newCustomerId, setNewCustomerId] = useState(customers[0]?.id ?? "");
   const [duplicateNameDraft, setDuplicateNameDraft] = useState<Record<string, string>>({});
   const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
 
-  const handleCreate = useCallback(() => {
+  useEffect(() => {
+    if (!newCustomerId && customers[0]?.id) {
+      setNewCustomerId(customers[0].id);
+    }
+  }, [customers, newCustomerId]);
+
+  const handleCreate = useCallback(async () => {
     if (!newName.trim() || !newCustomerId) return;
-    createProject(newName.trim(), newCustomerId);
-    setNewName("");
-    setShowForm(false);
-  }, [newName, newCustomerId, createProject]);
+
+    setIsCreating(true);
+    setFeedback(null);
+    try {
+      const created = await createProject(newName.trim(), newCustomerId);
+      setFeedback(`Created ${created.name}`);
+      setNewName("");
+      setShowForm(false);
+      router.push(`/projects/${created.id}`);
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "Unable to create project");
+    } finally {
+      setIsCreating(false);
+    }
+  }, [createProject, newCustomerId, newName, router]);
 
   const runDuplication = useCallback(
     async (projectId: string, includeItems: boolean) => {
@@ -163,10 +181,10 @@ export function ProjectsList() {
           </select>
           <button
             onClick={handleCreate}
-            disabled={!newName.trim()}
+            disabled={!newName.trim() || !newCustomerId || isCreating}
             className="px-4 py-2 text-sm font-medium rounded-lg bg-orange-500 text-white hover:bg-orange-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
-            Create
+            {isCreating ? "Creating..." : "Create"}
           </button>
           <button
             onClick={() => setShowForm(false)}
