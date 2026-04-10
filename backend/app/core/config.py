@@ -26,6 +26,11 @@ SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 SUPABASE_ADMIN_KEY = SUPABASE_SERVICE_ROLE_KEY or SUPABASE_KEY
 SUPABASE_STORAGE_BUCKET = os.getenv("SUPABASE_STORAGE_BUCKET", "builderpro-materials")
 
+# Email / notifications
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
+INVITE_FROM_EMAIL = os.getenv("INVITE_FROM_EMAIL", "")
+APP_BASE_URL = os.getenv("APP_BASE_URL", "").rstrip("/")
+
 # API
 API_V1_STR = "/api"
 PROJECT_NAME = "BuilderPro"

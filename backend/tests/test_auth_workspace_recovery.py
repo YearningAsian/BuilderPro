@@ -7,9 +7,11 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.api.auth import (
+    CreateInviteRequest,
     WorkspaceMemberUpdateRequest,
     _membership_role_for_session,
     _register_supabase_user_with_session,
+    create_invite,
     delete_workspace_member,
     list_session_workspaces,
     list_workspace_invites,
@@ -293,12 +295,13 @@ class WorkspaceRecoveryTests(unittest.TestCase):
 
             previous_expiry = invite.expires_at
 
-            response = resend_workspace_invite(
-                invite_id=str(invite.id),
-                db=db,
-                current_user=admin,
-                current_workspace_id=workspace.id,
-            )
+            with patch("app.api.auth.send_workspace_invite_email", return_value="http://localhost:3500/join-invite?token=updated-token") as mock_send:
+                response = resend_workspace_invite(
+                    invite_id=str(invite.id),
+                    db=db,
+                    current_user=admin,
+                    current_workspace_id=workspace.id,
+                )
 
             db.refresh(invite)
             self.assertEqual(response.invited_email, "worker@example.com")
@@ -306,9 +309,73 @@ class WorkspaceRecoveryTests(unittest.TestCase):
             self.assertNotEqual(response.invite_token, "original-token")
             self.assertEqual(invite.invite_token, response.invite_token)
             self.assertGreater(invite.expires_at, previous_expiry)
+            self.assertEqual(response.invite_url, "http://localhost:3500/join-invite?token=updated-token")
+            self.assertTrue(response.email_sent)
+            self.assertTrue(mock_send.called)
 
             audit_event = db.query(AuditLog).filter(AuditLog.action == "member.invite_resent").one()
             self.assertEqual(audit_event.workspace_id, workspace.id)
+        finally:
+            db.close()
+
+    @patch("app.api.auth._current_user_email_from_token")
+    def test_create_invite_sends_email_and_returns_join_url(self, mock_current_user_email_from_token):
+        mock_current_user_email_from_token.return_value = "owner@example.com"
+
+        db = self.make_session()
+        try:
+            owner = User(email="owner@example.com", full_name="Owner", role="admin")
+            workspace = Workspace(name="Invite Workspace", created_by=owner.id)
+            db.add_all([owner, workspace])
+            db.flush()
+            db.add(WorkspaceMember(workspace_id=workspace.id, user_id=owner.id, role="admin"))
+            db.commit()
+
+            with patch("app.api.auth.send_workspace_invite_email", return_value="http://localhost:3500/join-invite?token=abc") as mock_send:
+                response = create_invite(
+                    payload=CreateInviteRequest(
+                        workspace_id=str(workspace.id),
+                        invited_email="worker@example.com",
+                        expires_in_days=7,
+                    ),
+                    db=db,
+                    authorization="Bearer fake-token",
+                )
+
+            self.assertEqual(response.invited_email, "worker@example.com")
+            self.assertEqual(response.workspace_id, str(workspace.id))
+            self.assertEqual(response.invite_url, "http://localhost:3500/join-invite?token=abc")
+            self.assertTrue(response.email_sent)
+            self.assertTrue(mock_send.called)
+        finally:
+            db.close()
+
+    @patch("app.api.auth.is_invite_email_configured", return_value=False)
+    def test_create_invite_falls_back_to_link_when_email_not_configured(self, mock_email_configured):
+        db = self.make_session()
+        try:
+            owner = User(email="owner@example.com", full_name="Owner", role="admin")
+            workspace = Workspace(name="Invite Workspace", created_by=owner.id)
+            db.add_all([owner, workspace])
+            db.flush()
+            db.add(WorkspaceMember(workspace_id=workspace.id, user_id=owner.id, role="admin"))
+            db.commit()
+
+            with patch("app.api.auth._current_user_email_from_token", return_value="owner@example.com"):
+                response = create_invite(
+                    payload=CreateInviteRequest(
+                        workspace_id=str(workspace.id),
+                        invited_email="worker@example.com",
+                        expires_in_days=7,
+                    ),
+                    db=db,
+                    authorization="Bearer fake-token",
+                )
+
+            self.assertFalse(response.email_sent)
+            self.assertIn("Email delivery is not configured yet", response.delivery_message or "")
+            self.assertIn("/join-invite?", response.invite_url or "")
+            self.assertTrue(mock_email_configured.called)
         finally:
             db.close()
 

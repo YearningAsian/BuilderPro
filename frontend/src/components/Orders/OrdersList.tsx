@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useStore } from "@/hooks/useStore";
 import { formatCurrency, formatDate, truncate } from "@/lib/format";
 import { ordersApi } from "@/services/api";
-import type { OrderStatus, ProjectStatus, PurchaseOrder } from "@/types";
+import type { OrderStatus, ProjectItem, ProjectStatus, PurchaseOrder } from "@/types";
 
 type ProcurementState = "ready" | "needs-vendor" | "planning" | "ordered" | "closed";
 
@@ -85,6 +85,9 @@ export function OrdersList() {
   const [statusFilter, setStatusFilter] = useState<ProjectStatus | "all">("all");
   const [projectFilter, setProjectFilter] = useState<string>("all");
   const [vendorFilter, setVendorFilter] = useState<string>("all");
+  const [orderItems, setOrderItems] = useState<ProjectItem[]>([]);
+  const [isLoadingOrderItems, setIsLoadingOrderItems] = useState(true);
+  const [orderItemsError, setOrderItemsError] = useState("");
   const [savingItemId, setSavingItemId] = useState<string | null>(null);
   const [savingBatchVendorId, setSavingBatchVendorId] = useState<string | null>(null);
   const [vendorPoNumbers, setVendorPoNumbers] = useState<Record<string, string>>({});
@@ -107,56 +110,56 @@ export function OrdersList() {
   const [updatingPoNumber, setUpdatingPoNumber] = useState<string | null>(null);
 
   const orderRows = useMemo<OrderRow[]>(() => {
-    return projects
-      .flatMap((project) =>
-        project.items.map((item) => {
-          const material = getMaterialById(item.material_id);
-          const vendor = material?.default_vendor_id
-            ? getVendorById(material.default_vendor_id)
-            : undefined;
+    return orderItems
+      .map((item) => {
+        const project = projects.find((entry) => entry.id === item.project_id);
+        const material = getMaterialById(item.material_id);
+        const vendor = material?.default_vendor_id
+          ? getVendorById(material.default_vendor_id)
+          : undefined;
 
-          const vendorName = vendor?.name ?? "Vendor not assigned";
-          const orderStatus = item.order_status ?? "draft";
-          const procurementState: ProcurementState =
-            orderStatus === "received" || orderStatus === "cancelled" || project.status === "closed"
-              ? "closed"
-              : orderStatus === "ordered"
-                ? "ordered"
-                : vendor
-                  ? project.status === "active"
-                    ? "ready"
-                    : "planning"
-                  : "needs-vendor";
+        const projectStatus = project?.status ?? "draft";
+        const vendorName = vendor?.name ?? "Vendor not assigned";
+        const orderStatus = item.order_status ?? "draft";
+        const procurementState: ProcurementState =
+          orderStatus === "received" || orderStatus === "cancelled" || projectStatus === "closed"
+            ? "closed"
+            : orderStatus === "ordered"
+              ? "ordered"
+              : vendor
+                ? projectStatus === "active"
+                  ? "ready"
+                  : "planning"
+                : "needs-vendor";
 
-          return {
-            id: item.id,
-            projectId: project.id,
-            projectName: project.name,
-            materialId: item.material_id,
-            materialName: material?.name ?? "Unknown material",
-            vendorId: vendor?.id ?? null,
-            vendorName,
-            vendorEmail: vendor?.email ?? null,
-            orderStatus,
-            procurementState,
-            status: project.status,
-            quantityLabel: `${item.total_qty.toFixed(2)} ${item.unit_type}`,
-            total: item.line_subtotal,
-            updatedAt: item.updated_at,
-            orderedAt: item.ordered_at,
-            receivedAt: item.received_at,
-            poNumber: item.po_number ?? "",
-            purchaseNotes: item.purchase_notes ?? "",
-            expectedDeliveryAt: item.expected_delivery_at,
-            carrier: item.carrier ?? "",
-            trackingNumber: item.tracking_number ?? "",
-            trackingUrl: item.tracking_url ?? "",
-            notes: item.notes,
-          };
-        }),
-      )
+        return {
+          id: item.id,
+          projectId: item.project_id,
+          projectName: project?.name ?? "Unknown project",
+          materialId: item.material_id,
+          materialName: material?.name ?? "Unknown material",
+          vendorId: vendor?.id ?? null,
+          vendorName,
+          vendorEmail: vendor?.email ?? null,
+          orderStatus,
+          procurementState,
+          status: projectStatus,
+          quantityLabel: `${item.total_qty.toFixed(2)} ${item.unit_type}`,
+          total: item.line_subtotal,
+          updatedAt: item.updated_at,
+          orderedAt: item.ordered_at,
+          receivedAt: item.received_at,
+          poNumber: item.po_number ?? "",
+          purchaseNotes: item.purchase_notes ?? "",
+          expectedDeliveryAt: item.expected_delivery_at,
+          carrier: item.carrier ?? "",
+          trackingNumber: item.tracking_number ?? "",
+          trackingUrl: item.tracking_url ?? "",
+          notes: item.notes,
+        };
+      })
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-  }, [projects, getMaterialById, getVendorById]);
+  }, [orderItems, projects, getMaterialById, getVendorById]);
 
   const projectOptions = useMemo(
     () => Array.from(new Set(orderRows.map((row) => row.projectName))).sort((a, b) => a.localeCompare(b)),
@@ -243,8 +246,26 @@ export function OrdersList() {
   useEffect(() => {
     let active = true;
 
+    async function loadOrderItems() {
+      setIsLoadingOrderItems(true);
+      setOrderItemsError("");
+      try {
+        const nextItems = await ordersApi.list();
+        if (!active) return;
+        setOrderItems(nextItems);
+      } catch (error) {
+        if (!active) return;
+        setOrderItemsError(error instanceof Error ? error.message : "Unable to load order lines.");
+      } finally {
+        if (active) {
+          setIsLoadingOrderItems(false);
+        }
+      }
+    }
+
     async function loadPurchaseOrders() {
       setIsLoadingPurchaseOrders(true);
+      setPurchaseOrderError("");
       try {
         const nextOrders = await ordersApi.listPurchaseOrders();
         if (!active) return;
@@ -259,12 +280,18 @@ export function OrdersList() {
       }
     }
 
+    void loadOrderItems();
     void loadPurchaseOrders();
 
     return () => {
       active = false;
     };
   }, []);
+
+  async function reloadOrderItems() {
+    const nextItems = await ordersApi.list();
+    setOrderItems(nextItems);
+  }
 
   const shipmentTimeline = useMemo<ShipmentTimelineItem[]>(() => {
     return filteredRows
@@ -313,6 +340,7 @@ export function OrdersList() {
     try {
       setSavingItemId(itemId);
       await updateProjectItem(projectId, itemId, patch);
+      await reloadOrderItems();
     } catch (error) {
       console.warn("Failed to update purchase details", error);
     } finally {
@@ -369,6 +397,7 @@ export function OrdersList() {
       });
 
       await refreshData();
+      await reloadOrderItems();
 
       const actionLabel = nextStatus === "ordered" ? "ordered" : nextStatus === "received" ? "received" : nextStatus;
       setBatchStatusMessage(`Updated ${response.updated_count} line(s) for ${vendorName} to ${actionLabel}.`);
@@ -413,6 +442,7 @@ export function OrdersList() {
         tracking_url: (poTrackingUrls[batch.vendorId] ?? "").trim() || null,
       });
       await refreshData();
+      await reloadOrderItems();
       await reloadPurchaseOrders();
       setBatchStatusMessage(`Created purchase order ${poNumber} for ${batch.vendorName}.`);
     } catch (error) {
@@ -438,6 +468,7 @@ export function OrdersList() {
     try {
       await ordersApi.updatePurchaseOrder(poNumber, patch);
       await refreshData();
+      await reloadOrderItems();
       await reloadPurchaseOrders();
     } catch (error) {
       setPurchaseOrderError(error instanceof Error ? error.message : `Unable to update ${poNumber}.`);
@@ -578,6 +609,12 @@ export function OrdersList() {
           <p className="text-sm text-gray-500">Active lines with a vendor already assigned</p>
         </div>
       </div>
+
+      {orderItemsError && (
+        <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {orderItemsError}
+        </p>
+      )}
 
       <section className="card p-5 space-y-5">
         <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
@@ -915,7 +952,9 @@ export function OrdersList() {
         )}
 
         {vendorBatches.length === 0 ? (
-          <p className="text-sm text-gray-500">Assign vendors and add project line items to unlock vendor batching.</p>
+          <p className="text-sm text-gray-500">
+            {isLoadingOrderItems ? "Loading order lines..." : "Assign vendors and add project line items to unlock vendor batching."}
+          </p>
         ) : (
           <div className="overflow-x-auto">
             <table className="bp-table">

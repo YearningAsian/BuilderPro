@@ -75,7 +75,22 @@ test("orders page creates a purchase order from ready vendor lines", async ({ pa
   let projectItem = buildProjectItem();
   const purchaseOrders: Array<Record<string, unknown>> = [];
 
-  await page.route("**/api/vendors", async (route: Route) => {
+  await page.route("**/api/auth/workspaces**", async (route: Route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([
+        {
+          workspace_id: workspaceId,
+          workspace_name: "E2E Workspace",
+          role: "admin",
+          is_active: true,
+        },
+      ]),
+    });
+  });
+
+  await page.route("**/api/vendors**", async (route: Route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -94,7 +109,7 @@ test("orders page creates a purchase order from ready vendor lines", async ({ pa
     });
   });
 
-  await page.route("**/api/materials", async (route: Route) => {
+  await page.route("**/api/materials**", async (route: Route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -119,7 +134,7 @@ test("orders page creates a purchase order from ready vendor lines", async ({ pa
     });
   });
 
-  await page.route("**/api/customers", async (route: Route) => {
+  await page.route("**/api/customers**", async (route: Route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -138,7 +153,7 @@ test("orders page creates a purchase order from ready vendor lines", async ({ pa
     });
   });
 
-  await page.route("**/api/projects", async (route: Route) => {
+  await page.route("**/api/projects**", async (route: Route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -160,7 +175,7 @@ test("orders page creates a purchase order from ready vendor lines", async ({ pa
     });
   });
 
-  await page.route("**/api/orders/purchase-orders", async (route: Route) => {
+  await page.route("**/api/orders/purchase-orders**", async (route: Route) => {
     if (route.request().method() === "GET") {
       await route.fulfill({
         status: 200,
@@ -247,7 +262,7 @@ test("orders page creates a purchase order from ready vendor lines", async ({ pa
 
   await page.goto("/orders");
   await expect(page.getByRole("heading", { name: "Purchase Orders" })).toBeVisible();
-  await expect(page.getByText("Summit Supply")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Summit Supply" })).toBeVisible();
   await expect(page.getByText("1 ready line(s) across 1 project(s)")).toBeVisible();
 
   await page.getByLabel("PO number").fill("PO-2026-200");

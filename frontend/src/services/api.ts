@@ -67,6 +67,9 @@ export type CreateInviteResponse = {
   workspace_id: string;
   invited_email: string;
   expires_at: string;
+  invite_url?: string | null;
+  email_sent?: boolean;
+  delivery_message?: string | null;
 };
 
 export type BulkOrdersStatusPayload = {
@@ -477,6 +480,8 @@ export const projectItemsApi = {
 };
 
 export const ordersApi = {
+  list: async () =>
+    (await request<ProjectItem[]>(`${BASE}/orders`)).map(normalizeProjectItem),
   listPurchaseOrders: async (params?: { vendor_id?: string; status?: "draft" | "ordered" | "received" | "cancelled" }) => {
     const query = new URLSearchParams();
     if (params?.vendor_id) query.set("vendor_id", params.vendor_id);

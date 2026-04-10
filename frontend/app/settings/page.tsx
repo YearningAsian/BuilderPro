@@ -47,6 +47,527 @@ function buildInviteUrl(origin: string, inviteToken: string, invitedEmail: strin
   return `${origin}/join-invite?token=${encodeURIComponent(inviteToken)}&email=${encodeURIComponent(invitedEmail)}`;
 }
 
+function resolveInviteUrl(
+  origin: string,
+  inviteToken: string,
+  invitedEmail: string,
+  inviteUrl?: string | null,
+) {
+  return inviteUrl && inviteUrl.trim().length > 0
+    ? inviteUrl
+    : buildInviteUrl(origin, inviteToken, invitedEmail);
+}
+
+type InviteSectionProps = {
+  inviteEmail: string;
+  expiresInDays: number;
+  inviteLink: string;
+  inviteRecipient: string;
+  pendingInvites: WorkspaceInviteSummary[];
+  workspaceName: string;
+  canCreateInvite: boolean;
+  copied: boolean;
+  errorMessage: string;
+  statusMessage: string;
+  isCreatingInvite: boolean;
+  isLoadingInvites: boolean;
+  isLoadingWorkspace: boolean;
+  inviteActionId: string | null;
+  inviteActionType: InviteActionType;
+  onInviteEmailChange: (value: string) => void;
+  onExpiresInDaysChange: (value: number) => void;
+  onCreateInvite: (event: React.FormEvent<HTMLFormElement>) => void;
+  onCopy: () => void;
+  onResendInvite: (invite: WorkspaceInviteSummary) => void;
+  onRevokeInvite: (invite: WorkspaceInviteSummary) => void;
+};
+
+type MembersSectionProps = {
+  members: WorkspaceMember[];
+  sessionEmail: string;
+  isLoadingMembers: boolean;
+  memberActionId: string | null;
+  onMemberRoleChange: (memberId: string, nextRole: WorkspaceRole) => void;
+  onRemoveMember: (member: WorkspaceMember) => void;
+};
+
+type WorkspaceSummarySectionProps = {
+  sessionEmail: string;
+  workspaceName: string;
+  workspaceId: string;
+  workspaceProfileName: string;
+  isLoadingWorkspace: boolean;
+  isSavingWorkspaceProfile: boolean;
+  isLoadingBillingSummary: boolean;
+  billingSummary: {
+    member_count: number;
+    material_count: number;
+    active_project_count: number;
+    draft_project_count: number;
+    monthly_estimate_total: number;
+    plan_name: string;
+  } | null;
+  onWorkspaceProfileNameChange: (value: string) => void;
+  onWorkspaceProfileUpdate: (event: React.FormEvent<HTMLFormElement>) => void;
+};
+
+type AuditSectionProps = {
+  auditFilter: AuditFilter;
+  filteredAuditEvents: AuditLogEntry[];
+  isLoadingAuditEvents: boolean;
+  onAuditFilterChange: (filter: AuditFilter) => void;
+};
+
+function InviteSection({
+  inviteEmail,
+  expiresInDays,
+  inviteLink,
+  inviteRecipient,
+  pendingInvites,
+  workspaceName,
+  canCreateInvite,
+  copied,
+  errorMessage,
+  statusMessage,
+  isCreatingInvite,
+  isLoadingInvites,
+  isLoadingWorkspace,
+  inviteActionId,
+  inviteActionType,
+  onInviteEmailChange,
+  onExpiresInDaysChange,
+  onCreateInvite,
+  onCopy,
+  onResendInvite,
+  onRevokeInvite,
+}: InviteSectionProps) {
+  return (
+    <section className="card p-5 space-y-4">
+      <div>
+        <h2 className="text-lg font-semibold text-gray-900">Invite a worker</h2>
+        <p className="text-sm text-gray-600 mt-1">
+          Send a workspace invite email directly from BuilderPro.
+        </p>
+      </div>
+
+      <form className="space-y-4" onSubmit={onCreateInvite}>
+        <div>
+          <label htmlFor="inviteEmail" className="block text-sm font-medium text-gray-800 mb-1">
+            Worker email
+          </label>
+          <input
+            id="inviteEmail"
+            type="email"
+            value={inviteEmail}
+            onChange={(event) => onInviteEmailChange(event.target.value)}
+            placeholder="worker@company.com"
+            className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm text-gray-900 bg-white outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-400"
+          />
+        </div>
+
+        <div>
+          <label htmlFor="expiresInDays" className="block text-sm font-medium text-gray-800 mb-1">
+            Link expires in
+          </label>
+          <select
+            id="expiresInDays"
+            value={expiresInDays}
+            onChange={(event) => onExpiresInDaysChange(Number(event.target.value))}
+            className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm text-gray-900 bg-white outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-400"
+          >
+            <option value={1}>1 day</option>
+            <option value={3}>3 days</option>
+            <option value={7}>7 days</option>
+            <option value={14}>14 days</option>
+            <option value={30}>30 days</option>
+          </select>
+        </div>
+
+        {errorMessage && (
+          <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            {errorMessage}
+          </p>
+        )}
+
+        {statusMessage && (
+          <p className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
+            {statusMessage}
+          </p>
+        )}
+
+        <button
+          type="submit"
+          disabled={!canCreateInvite}
+          className="rounded-lg bg-orange-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-orange-600 disabled:bg-orange-300 disabled:cursor-not-allowed"
+        >
+          {isCreatingInvite
+            ? "Creating invite..."
+            : isLoadingWorkspace && !inviteLink
+              ? "Loading workspace..."
+              : "Send invite email"}
+        </button>
+      </form>
+
+      {inviteLink && (
+        <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-3">
+          <p className="text-sm font-medium text-gray-800">Latest invite link</p>
+          <textarea
+            readOnly
+            value={inviteLink}
+            rows={3}
+            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700"
+          />
+          <div className="flex flex-wrap gap-3">
+            <Link
+              href={buildInviteEmailUrl(
+                inviteRecipient || inviteEmail.trim().toLowerCase(),
+                workspaceName || "your Builder Pro workspace",
+                inviteLink,
+              )}
+              className="rounded-lg border border-blue-300 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50"
+            >
+              Open email draft
+            </Link>
+            <button
+              type="button"
+              onClick={onCopy}
+              className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-white"
+            >
+              {copied ? "Copied" : "Copy link"}
+            </button>
+            <Link
+              href={inviteLink}
+              target="_blank"
+              className="rounded-lg border border-orange-300 px-3 py-2 text-sm font-medium text-orange-700 hover:bg-orange-50"
+            >
+              Open join page
+            </Link>
+          </div>
+        </div>
+      )}
+
+      <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-sm font-semibold text-gray-900">Pending invites</p>
+          <span className="rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[11px] font-semibold text-gray-700">
+            {pendingInvites.length}
+          </span>
+        </div>
+
+        {isLoadingInvites ? (
+          <p className="text-sm text-gray-500">Loading pending invites...</p>
+        ) : pendingInvites.length === 0 ? (
+          <p className="text-sm text-gray-500">No pending invites.</p>
+        ) : (
+          <div className="space-y-2">
+            {pendingInvites.map((invite) => {
+              const isBusy = inviteActionId === invite.id;
+              const isResending = isBusy && inviteActionType === "resend";
+              const isRevoking = isBusy && inviteActionType === "revoke";
+              return (
+                <div key={invite.id} className="rounded-lg border border-gray-200 p-3">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">{invite.invited_email}</p>
+                      <p className="text-xs text-gray-500">
+                        Expires {formatDate(invite.expires_at)}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() => onResendInvite(invite)}
+                        className="rounded-lg border border-blue-300 px-2.5 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:border-blue-200 disabled:text-blue-300"
+                      >
+                        {isResending ? "Resending..." : "Resend"}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() => onRevokeInvite(invite)}
+                        className="rounded-lg border border-red-300 px-2.5 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:border-red-200 disabled:text-red-300"
+                      >
+                        {isRevoking ? "Revoking..." : "Revoke"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function WorkspaceSummarySection({
+  sessionEmail,
+  workspaceName,
+  workspaceId,
+  workspaceProfileName,
+  isLoadingWorkspace,
+  isSavingWorkspaceProfile,
+  isLoadingBillingSummary,
+  billingSummary,
+  onWorkspaceProfileNameChange,
+  onWorkspaceProfileUpdate,
+}: WorkspaceSummarySectionProps) {
+  return (
+    <aside className="card p-5 space-y-3">
+      <h2 className="text-lg font-semibold text-gray-900">Workspace</h2>
+      <div className="text-sm text-gray-600 space-y-2">
+        <p className="flex flex-wrap items-center gap-2">
+          <span className="font-medium text-gray-800">Admin:</span>
+          <span>{sessionEmail}</span>
+          <span className="inline-flex items-center rounded-full border border-orange-200 bg-orange-100 px-2 py-0.5 text-[11px] font-semibold text-orange-700">
+            Workspace Admin
+          </span>
+        </p>
+        <p>
+          <span className="font-medium text-gray-800">Workspace:</span>{" "}
+          {workspaceName || (isLoadingWorkspace ? "Loading..." : "Not available")}
+        </p>
+        <p>
+          <span className="font-medium text-gray-800">Workspace ID:</span>{" "}
+          {workspaceId || (isLoadingWorkspace ? "Loading..." : "Not available")}
+        </p>
+      </div>
+
+      <form className="space-y-2 rounded-xl border border-gray-200 bg-gray-50 p-3" onSubmit={onWorkspaceProfileUpdate}>
+        <p className="text-sm font-semibold text-gray-800">Workspace profile</p>
+        <label htmlFor="workspaceName" className="block text-xs font-medium uppercase tracking-wide text-gray-500">
+          Workspace name
+        </label>
+        <input
+          id="workspaceName"
+          type="text"
+          value={workspaceProfileName}
+          onChange={(event) => onWorkspaceProfileNameChange(event.target.value)}
+          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 bg-white outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-400"
+          placeholder="Workspace name"
+          disabled={isSavingWorkspaceProfile}
+        />
+        <button
+          type="submit"
+          disabled={isSavingWorkspaceProfile || isLoadingWorkspace}
+          className="rounded-lg bg-gray-900 px-3 py-2 text-xs font-semibold text-white hover:bg-black disabled:cursor-not-allowed disabled:bg-gray-400"
+        >
+          {isSavingWorkspaceProfile ? "Saving..." : "Save workspace profile"}
+        </button>
+      </form>
+
+      <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-900 space-y-2">
+        <p className="font-semibold">Billing snapshot</p>
+        {isLoadingBillingSummary ? (
+          <p className="text-xs text-indigo-700">Loading billing metrics...</p>
+        ) : !billingSummary ? (
+          <p className="text-xs text-indigo-700">Billing metrics are unavailable.</p>
+        ) : (
+          <div className="space-y-1 text-xs">
+            <p><span className="font-medium">Plan:</span> {billingSummary.plan_name}</p>
+            <p><span className="font-medium">Members:</span> {billingSummary.member_count}</p>
+            <p><span className="font-medium">Materials:</span> {billingSummary.material_count}</p>
+            <p><span className="font-medium">Active projects:</span> {billingSummary.active_project_count}</p>
+            <p><span className="font-medium">Draft projects:</span> {billingSummary.draft_project_count}</p>
+            <p><span className="font-medium">Estimate volume:</span> {formatCurrency(billingSummary.monthly_estimate_total)}</p>
+          </div>
+        )}
+      </div>
+
+      {isLoadingWorkspace && (
+        <p className="text-sm text-gray-500">Refreshing workspace details...</p>
+      )}
+
+      {!isLoadingWorkspace && !workspaceId && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          No workspace is linked to this account yet, so invite links cannot be generated until that is fixed.
+        </div>
+      )}
+
+      <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <span className="inline-flex items-center rounded-full border border-blue-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-blue-700">
+            Invited Worker
+          </span>
+          <span className="inline-flex items-center rounded-full border border-orange-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-orange-700">
+            Workspace Admin
+          </span>
+        </div>
+        After you send the email, the worker can open the invite link, complete the Join Workspace form, and they will be added under this admin and company workspace.
+      </div>
+    </aside>
+  );
+}
+
+function MembersSection({
+  members,
+  sessionEmail,
+  isLoadingMembers,
+  memberActionId,
+  onMemberRoleChange,
+  onRemoveMember,
+}: MembersSectionProps) {
+  return (
+    <section className="card p-5 space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold text-gray-900">Workspace members</h2>
+          <p className="text-sm text-gray-600 mt-1">
+            Review member roles and remove access when someone should no longer work in this workspace.
+          </p>
+        </div>
+        <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs font-semibold text-gray-700">
+          {members.length} member{members.length === 1 ? "" : "s"}
+        </span>
+      </div>
+
+      {isLoadingMembers ? (
+        <p className="text-sm text-gray-500">Loading workspace members...</p>
+      ) : members.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-4 text-sm text-gray-600">
+          No members are visible in this workspace yet.
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {members.map((member) => {
+            const isCurrentUser = member.email === sessionEmail;
+            const isBusy = memberActionId === member.id;
+
+            return (
+              <div key={member.id} className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">{member.full_name || member.email}</p>
+                    <p className="text-sm text-gray-600">{member.email}</p>
+                  </div>
+                  <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${member.role === "admin" ? "border border-orange-200 bg-orange-100 text-orange-700" : "border border-gray-200 bg-gray-100 text-gray-700"}`}>
+                    {member.role === "admin" ? "Admin" : "Member"}
+                    {isCurrentUser ? " • You" : ""}
+                  </span>
+                </div>
+
+                <div className="mt-3 flex flex-wrap items-center gap-3">
+                  <label className="text-sm font-medium text-gray-800" htmlFor={`role-${member.id}`}>
+                    Role
+                  </label>
+                  <select
+                    id={`role-${member.id}`}
+                    value={member.role}
+                    disabled={isBusy || isCurrentUser}
+                    onChange={(event) => {
+                      onMemberRoleChange(member.id, event.target.value as WorkspaceRole);
+                    }}
+                    className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 bg-white outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-400 disabled:bg-gray-100"
+                  >
+                    <option value="admin">Admin</option>
+                    <option value="user">Member</option>
+                  </select>
+
+                  <button
+                    type="button"
+                    onClick={() => onRemoveMember(member)}
+                    disabled={isBusy || isCurrentUser}
+                    className="rounded-lg border border-red-300 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:border-red-200 disabled:text-red-300"
+                  >
+                    {isBusy ? "Working..." : "Remove access"}
+                  </button>
+                </div>
+
+                {isCurrentUser && (
+                  <p className="mt-2 text-xs text-gray-500">
+                    Your own role and access are locked here for safety.
+                  </p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function AuditSection({
+  auditFilter,
+  filteredAuditEvents,
+  isLoadingAuditEvents,
+  onAuditFilterChange,
+}: AuditSectionProps) {
+  return (
+    <aside className="card p-5 space-y-4">
+      <div>
+        <h2 className="text-lg font-semibold text-gray-900">Recent activity</h2>
+        <p className="text-sm text-gray-600 mt-1">
+          Admin activity is now logged so workspace changes are easier to review.
+        </p>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        {[
+          { key: "all" as const, label: "All" },
+          { key: "orders" as const, label: "Order events" },
+          { key: "members" as const, label: "Member events" },
+          { key: "invites" as const, label: "Invite events" },
+          { key: "other" as const, label: "Other" },
+        ].map((option) => {
+          const isActive = auditFilter === option.key;
+          return (
+            <button
+              key={option.key}
+              type="button"
+              onClick={() => onAuditFilterChange(option.key)}
+              className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
+                isActive
+                  ? "bg-orange-500 text-white"
+                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+              }`}
+            >
+              {option.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {isLoadingAuditEvents ? (
+        <p className="text-sm text-gray-500">Loading activity...</p>
+      ) : filteredAuditEvents.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-4 text-sm text-gray-600">
+          No events match the selected filter.
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {filteredAuditEvents.map((event) => (
+            <div key={event.id} className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <p className="text-sm font-semibold text-gray-900">{event.action.replaceAll(".", " ")}</p>
+                  <p className="text-xs text-gray-500">
+                    {event.actor_email || "Unknown user"} • {formatDate(event.created_at)}
+                  </p>
+                </div>
+                <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700">
+                  {event.resource_type}
+                </span>
+              </div>
+              {event.details && (
+                <div className="mt-2 text-xs text-gray-600 space-y-1">
+                  {Object.entries(event.details).map(([key, value]) => (
+                    <p key={key}>
+                      <span className="font-medium text-gray-700">{key}:</span> {String(value)}
+                    </p>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </aside>
+  );
+}
+
 export default function SettingsPage() {
   const [session, setSession] = useState<BuilderProSession | null>(null);
   const [workspaceId, setWorkspaceId] = useState("");
@@ -281,24 +802,23 @@ export default function SettingsPage() {
         expires_in_days: expiresInDays,
       });
 
-      const inviteUrl = buildInviteUrl(window.location.origin, invite.invite_token, invite.invited_email);
+      const inviteUrl = resolveInviteUrl(
+        window.location.origin,
+        invite.invite_token,
+        invite.invited_email,
+        invite.invite_url,
+      );
       setInviteLink(inviteUrl);
       setInviteRecipient(invite.invited_email);
-      setStatusMessage(`Invite prepared for ${invite.invited_email}. Your email app should open with the invite link ready to send.`);
+      setStatusMessage(
+        invite.delivery_message?.trim() || `Invite email sent to ${invite.invited_email}.`
+      );
       const [nextInvites, nextAuditEvents] = await Promise.all([
         authApi.listInvites(),
         authApi.listAuditEvents(),
       ]);
       setPendingInvites(nextInvites);
       setAuditEvents(nextAuditEvents);
-
-      if (typeof window !== "undefined") {
-        window.location.href = buildInviteEmailUrl(
-          invite.invited_email,
-          workspaceName || "your Builder Pro workspace",
-          inviteUrl,
-        );
-      }
     } catch (error) {
       setErrorMessage(
         error instanceof Error && error.message
@@ -382,15 +902,18 @@ export default function SettingsPage() {
 
     try {
       const resentInvite = await authApi.resendInvite(invite.id);
-      const inviteUrl = buildInviteUrl(
+      const inviteUrl = resolveInviteUrl(
         window.location.origin,
         resentInvite.invite_token,
         resentInvite.invited_email,
+        resentInvite.invite_url,
       );
 
       setInviteLink(inviteUrl);
       setInviteRecipient(resentInvite.invited_email);
-      setStatusMessage(`Invite resent for ${resentInvite.invited_email}. Your email app should open with the refreshed invite link ready to send.`);
+      setStatusMessage(
+        resentInvite.delivery_message?.trim() || `Invite email resent to ${resentInvite.invited_email}.`
+      );
 
       const [nextInvites, nextAuditEvents] = await Promise.all([
         authApi.listInvites(),
@@ -399,13 +922,6 @@ export default function SettingsPage() {
       setPendingInvites(nextInvites);
       setAuditEvents(nextAuditEvents);
 
-      if (typeof window !== "undefined") {
-        window.location.href = buildInviteEmailUrl(
-          resentInvite.invited_email,
-          workspaceName || "your Builder Pro workspace",
-          inviteUrl,
-        );
-      }
     } catch (error) {
       setErrorMessage(
         error instanceof Error && error.message
@@ -526,396 +1042,66 @@ export default function SettingsPage() {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-        <section className="card p-5 space-y-4">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900">Invite a worker</h2>
-            <p className="text-sm text-gray-600 mt-1">
-              Generate the invite and open an email draft so you can send the link directly to the worker.
-            </p>
-          </div>
+        <InviteSection
+          inviteEmail={inviteEmail}
+          expiresInDays={expiresInDays}
+          inviteLink={inviteLink}
+          inviteRecipient={inviteRecipient}
+          pendingInvites={pendingInvites}
+          workspaceName={workspaceName}
+          canCreateInvite={canCreateInvite}
+          copied={copied}
+          errorMessage={errorMessage}
+          statusMessage={statusMessage}
+          isCreatingInvite={isCreatingInvite}
+          isLoadingInvites={isLoadingInvites}
+          isLoadingWorkspace={isLoadingWorkspace}
+          inviteActionId={inviteActionId}
+          inviteActionType={inviteActionType}
+          onInviteEmailChange={setInviteEmail}
+          onExpiresInDaysChange={setExpiresInDays}
+          onCreateInvite={handleCreateInvite}
+          onCopy={handleCopy}
+          onResendInvite={(invite) => void handleResendInvite(invite)}
+          onRevokeInvite={(invite) => void handleRevokeInvite(invite)}
+        />
 
-          <form className="space-y-4" onSubmit={handleCreateInvite}>
-            <div>
-              <label htmlFor="inviteEmail" className="block text-sm font-medium text-gray-800 mb-1">
-                Worker email
-              </label>
-              <input
-                id="inviteEmail"
-                type="email"
-                value={inviteEmail}
-                onChange={(event) => setInviteEmail(event.target.value)}
-                placeholder="worker@company.com"
-                className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm text-gray-900 bg-white outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-400"
-              />
-            </div>
-
-            <div>
-              <label htmlFor="expiresInDays" className="block text-sm font-medium text-gray-800 mb-1">
-                Link expires in
-              </label>
-              <select
-                id="expiresInDays"
-                value={expiresInDays}
-                onChange={(event) => setExpiresInDays(Number(event.target.value))}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm text-gray-900 bg-white outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-400"
-              >
-                <option value={1}>1 day</option>
-                <option value={3}>3 days</option>
-                <option value={7}>7 days</option>
-                <option value={14}>14 days</option>
-                <option value={30}>30 days</option>
-              </select>
-            </div>
-
-            {errorMessage && (
-              <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                {errorMessage}
-              </p>
-            )}
-
-            {statusMessage && (
-              <p className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
-                {statusMessage}
-              </p>
-            )}
-
-            <button
-              type="submit"
-              disabled={!canCreateInvite}
-              className="rounded-lg bg-orange-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-orange-600 disabled:bg-orange-300 disabled:cursor-not-allowed"
-            >
-              {isCreatingInvite
-                ? "Creating invite..."
-                : isLoadingWorkspace && !workspaceId
-                  ? "Loading workspace..."
-                  : "Create & email invite"}
-            </button>
-          </form>
-
-          {inviteLink && (
-            <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-3">
-              <p className="text-sm font-medium text-gray-800">Invite email and join link</p>
-              <textarea
-                readOnly
-                value={inviteLink}
-                rows={3}
-                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700"
-              />
-              <div className="flex flex-wrap gap-3">
-                <Link
-                  href={buildInviteEmailUrl(
-                    inviteRecipient || inviteEmail.trim().toLowerCase(),
-                    workspaceName || "your Builder Pro workspace",
-                    inviteLink,
-                  )}
-                  className="rounded-lg border border-blue-300 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50"
-                >
-                  Email invite
-                </Link>
-                <button
-                  type="button"
-                  onClick={handleCopy}
-                  className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-white"
-                >
-                  {copied ? "Copied" : "Copy link"}
-                </button>
-                <Link
-                  href={inviteLink}
-                  target="_blank"
-                  className="rounded-lg border border-orange-300 px-3 py-2 text-sm font-medium text-orange-700 hover:bg-orange-50"
-                >
-                  Open join page
-                </Link>
-              </div>
-            </div>
-          )}
-
-          <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-3">
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-sm font-semibold text-gray-900">Pending invites</p>
-              <span className="rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[11px] font-semibold text-gray-700">
-                {pendingInvites.length}
-              </span>
-            </div>
-
-            {isLoadingInvites ? (
-              <p className="text-sm text-gray-500">Loading pending invites...</p>
-            ) : pendingInvites.length === 0 ? (
-              <p className="text-sm text-gray-500">No pending invites.</p>
-            ) : (
-              <div className="space-y-2">
-                {pendingInvites.map((invite) => {
-                  const isBusy = inviteActionId === invite.id;
-                  const isResending = isBusy && inviteActionType === "resend";
-                  const isRevoking = isBusy && inviteActionType === "revoke";
-                  return (
-                    <div key={invite.id} className="rounded-lg border border-gray-200 p-3">
-                      <div className="flex flex-wrap items-start justify-between gap-2">
-                        <div>
-                          <p className="text-sm font-medium text-gray-900">{invite.invited_email}</p>
-                          <p className="text-xs text-gray-500">
-                            Expires {formatDate(invite.expires_at)}
-                          </p>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            disabled={isBusy}
-                            onClick={() => void handleResendInvite(invite)}
-                            className="rounded-lg border border-blue-300 px-2.5 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:border-blue-200 disabled:text-blue-300"
-                          >
-                            {isResending ? "Resending..." : "Resend"}
-                          </button>
-                          <button
-                            type="button"
-                            disabled={isBusy}
-                            onClick={() => void handleRevokeInvite(invite)}
-                            className="rounded-lg border border-red-300 px-2.5 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:border-red-200 disabled:text-red-300"
-                          >
-                            {isRevoking ? "Revoking..." : "Revoke"}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </section>
-
-        <aside className="card p-5 space-y-3">
-          <h2 className="text-lg font-semibold text-gray-900">Workspace</h2>
-          <div className="text-sm text-gray-600 space-y-2">
-            <p className="flex flex-wrap items-center gap-2">
-              <span className="font-medium text-gray-800">Admin:</span>
-              <span>{session.email}</span>
-              <span className="inline-flex items-center rounded-full border border-orange-200 bg-orange-100 px-2 py-0.5 text-[11px] font-semibold text-orange-700">
-                Workspace Admin
-              </span>
-            </p>
-            <p>
-              <span className="font-medium text-gray-800">Workspace:</span>{" "}
-              {workspaceName || (isLoadingWorkspace ? "Loading..." : "Not available")}
-            </p>
-            <p>
-              <span className="font-medium text-gray-800">Workspace ID:</span>{" "}
-              {workspaceId || (isLoadingWorkspace ? "Loading..." : "Not available")}
-            </p>
-          </div>
-
-          <form className="space-y-2 rounded-xl border border-gray-200 bg-gray-50 p-3" onSubmit={handleWorkspaceProfileUpdate}>
-            <p className="text-sm font-semibold text-gray-800">Workspace profile</p>
-            <label htmlFor="workspaceName" className="block text-xs font-medium uppercase tracking-wide text-gray-500">
-              Workspace name
-            </label>
-            <input
-              id="workspaceName"
-              type="text"
-              value={workspaceProfileName}
-              onChange={(event) => setWorkspaceProfileName(event.target.value)}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 bg-white outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-400"
-              placeholder="Workspace name"
-              disabled={isSavingWorkspaceProfile}
-            />
-            <button
-              type="submit"
-              disabled={isSavingWorkspaceProfile || isLoadingWorkspace}
-              className="rounded-lg bg-gray-900 px-3 py-2 text-xs font-semibold text-white hover:bg-black disabled:cursor-not-allowed disabled:bg-gray-400"
-            >
-              {isSavingWorkspaceProfile ? "Saving..." : "Save workspace profile"}
-            </button>
-          </form>
-
-          <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-900 space-y-2">
-            <p className="font-semibold">Billing snapshot</p>
-            {isLoadingBillingSummary ? (
-              <p className="text-xs text-indigo-700">Loading billing metrics...</p>
-            ) : !billingSummary ? (
-              <p className="text-xs text-indigo-700">Billing metrics are unavailable.</p>
-            ) : (
-              <div className="space-y-1 text-xs">
-                <p><span className="font-medium">Plan:</span> {billingSummary.plan_name}</p>
-                <p><span className="font-medium">Members:</span> {billingSummary.member_count}</p>
-                <p><span className="font-medium">Materials:</span> {billingSummary.material_count}</p>
-                <p><span className="font-medium">Active projects:</span> {billingSummary.active_project_count}</p>
-                <p><span className="font-medium">Draft projects:</span> {billingSummary.draft_project_count}</p>
-                <p><span className="font-medium">Estimate volume:</span> {formatCurrency(billingSummary.monthly_estimate_total)}</p>
-              </div>
-            )}
-          </div>
-
-          {isLoadingWorkspace && (
-            <p className="text-sm text-gray-500">Refreshing workspace details...</p>
-          )}
-
-          {!isLoadingWorkspace && !workspaceId && (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-              No workspace is linked to this account yet, so invite links cannot be generated until that is fixed.
-            </div>
-          )}
-
-          <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
-            <div className="mb-2 flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center rounded-full border border-blue-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-blue-700">
-                Invited Worker
-              </span>
-              <span className="inline-flex items-center rounded-full border border-orange-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-orange-700">
-                Workspace Admin
-              </span>
-            </div>
-            After you send the email, the worker can open the invite link, complete the Join Workspace form, and they will be added under this admin and company workspace.
-          </div>
-        </aside>
+        <WorkspaceSummarySection
+          sessionEmail={session.email}
+          workspaceName={workspaceName}
+          workspaceId={workspaceId}
+          workspaceProfileName={workspaceProfileName}
+          isLoadingWorkspace={isLoadingWorkspace}
+          isSavingWorkspaceProfile={isSavingWorkspaceProfile}
+          isLoadingBillingSummary={isLoadingBillingSummary}
+          billingSummary={billingSummary}
+          onWorkspaceProfileNameChange={setWorkspaceProfileName}
+          onWorkspaceProfileUpdate={(event) => {
+            void handleWorkspaceProfileUpdate(event);
+          }}
+        />
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-        <section className="card p-5 space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">Workspace members</h2>
-              <p className="text-sm text-gray-600 mt-1">
-                Review member roles and remove access when someone should no longer work in this workspace.
-              </p>
-            </div>
-            <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs font-semibold text-gray-700">
-              {members.length} member{members.length === 1 ? "" : "s"}
-            </span>
-          </div>
+        <MembersSection
+          members={members}
+          sessionEmail={session.email}
+          isLoadingMembers={isLoadingMembers}
+          memberActionId={memberActionId}
+          onMemberRoleChange={(memberId, nextRole) => {
+            void handleMemberRoleChange(memberId, nextRole);
+          }}
+          onRemoveMember={(member) => {
+            void handleRemoveMember(member);
+          }}
+        />
 
-        {isLoadingMembers ? (
-          <p className="text-sm text-gray-500">Loading workspace members...</p>
-        ) : members.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-4 text-sm text-gray-600">
-            No members are visible in this workspace yet.
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {members.map((member) => {
-              const isCurrentUser = member.email === session.email;
-              const isBusy = memberActionId === member.id;
-
-              return (
-                <div key={member.id} className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold text-gray-900">{member.full_name || member.email}</p>
-                      <p className="text-sm text-gray-600">{member.email}</p>
-                    </div>
-                    <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${member.role === "admin" ? "border border-orange-200 bg-orange-100 text-orange-700" : "border border-gray-200 bg-gray-100 text-gray-700"}`}>
-                      {member.role === "admin" ? "Admin" : "Member"}
-                      {isCurrentUser ? " • You" : ""}
-                    </span>
-                  </div>
-
-                  <div className="mt-3 flex flex-wrap items-center gap-3">
-                    <label className="text-sm font-medium text-gray-800" htmlFor={`role-${member.id}`}>
-                      Role
-                    </label>
-                    <select
-                      id={`role-${member.id}`}
-                      value={member.role}
-                      disabled={isBusy || isCurrentUser}
-                      onChange={(event) => {
-                        void handleMemberRoleChange(member.id, event.target.value as WorkspaceRole);
-                      }}
-                      className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 bg-white outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-400 disabled:bg-gray-100"
-                    >
-                      <option value="admin">Admin</option>
-                      <option value="user">Member</option>
-                    </select>
-
-                    <button
-                      type="button"
-                      onClick={() => void handleRemoveMember(member)}
-                      disabled={isBusy || isCurrentUser}
-                      className="rounded-lg border border-red-300 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:border-red-200 disabled:text-red-300"
-                    >
-                      {isBusy ? "Working..." : "Remove access"}
-                    </button>
-                  </div>
-
-                  {isCurrentUser && (
-                    <p className="mt-2 text-xs text-gray-500">
-                      Your own role and access are locked here for safety.
-                    </p>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-        </section>
-
-        <aside className="card p-5 space-y-4">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900">Recent activity</h2>
-            <p className="text-sm text-gray-600 mt-1">
-              Admin activity is now logged so workspace changes are easier to review.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            {[
-              { key: "all" as const, label: "All" },
-              { key: "orders" as const, label: "Order events" },
-              { key: "members" as const, label: "Member events" },
-              { key: "invites" as const, label: "Invite events" },
-              { key: "other" as const, label: "Other" },
-            ].map((option) => {
-              const isActive = auditFilter === option.key;
-              return (
-                <button
-                  key={option.key}
-                  type="button"
-                  onClick={() => setAuditFilter(option.key)}
-                  className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
-                    isActive
-                      ? "bg-orange-500 text-white"
-                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                  }`}
-                >
-                  {option.label}
-                </button>
-              );
-            })}
-          </div>
-
-          {isLoadingAuditEvents ? (
-            <p className="text-sm text-gray-500">Loading activity...</p>
-          ) : filteredAuditEvents.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-4 text-sm text-gray-600">
-              No events match the selected filter.
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {filteredAuditEvents.map((event) => (
-                <div key={event.id} className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div>
-                      <p className="text-sm font-semibold text-gray-900">{event.action.replaceAll(".", " ")}</p>
-                      <p className="text-xs text-gray-500">
-                        {event.actor_email || "Unknown user"} • {formatDate(event.created_at)}
-                      </p>
-                    </div>
-                    <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700">
-                      {event.resource_type}
-                    </span>
-                  </div>
-                  {event.details && (
-                    <div className="mt-2 text-xs text-gray-600 space-y-1">
-                      {Object.entries(event.details).map(([key, value]) => (
-                        <p key={key}>
-                          <span className="font-medium text-gray-700">{key}:</span> {String(value)}
-                        </p>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </aside>
+        <AuditSection
+          auditFilter={auditFilter}
+          filteredAuditEvents={filteredAuditEvents}
+          isLoadingAuditEvents={isLoadingAuditEvents}
+          onAuditFilterChange={setAuditFilter}
+        />
       </div>
     </div>
   );
