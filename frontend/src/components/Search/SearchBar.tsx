@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useStore } from "@/hooks/useStore";
 import { useDebounce } from "@/hooks/useDebounce";
@@ -12,6 +12,7 @@ import type { SearchEntity, SearchResponse } from "@/types";
  * Global search page with backend-powered query and advanced filters.
  */
 export function SearchBar() {
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const [raw, setRaw] = useState("");
   const query = useDebounce(raw, 300);
   const [entity, setEntity] = useState<SearchEntity>("all");
@@ -33,6 +34,46 @@ export function SearchBar() {
       ),
     [materials],
   );
+
+  const resultSummary = useMemo(
+    () => ({
+      materials: results?.materials.length ?? 0,
+      projects: results?.projects.length ?? 0,
+      customers: results?.customers.length ?? 0,
+      vendors: results?.vendors.length ?? 0,
+    }),
+    [results],
+  );
+
+  function clearFilters() {
+    setEntity("all");
+    setProjectStatus("all");
+    setMaterialCategory("all");
+    setVendorId("all");
+    setProjectId("all");
+    setLimit(25);
+  }
+
+  useEffect(() => {
+    function handleKeydown(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      const isTypingTarget =
+        target?.tagName === "INPUT" ||
+        target?.tagName === "TEXTAREA" ||
+        target?.tagName === "SELECT" ||
+        target?.isContentEditable;
+
+      if (event.key === "/" && !isTypingTarget) {
+        event.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    }
+
+    window.addEventListener("keydown", handleKeydown);
+    return () => {
+      window.removeEventListener("keydown", handleKeydown);
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -108,6 +149,7 @@ export function SearchBar() {
           />
         </svg>
         <input
+          ref={searchInputRef}
           type="text"
           value={raw}
           onChange={(e) => setRaw(e.target.value)}
@@ -211,6 +253,38 @@ export function SearchBar() {
           </select>
         </label>
       </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={clearFilters}
+          className="rounded-full border border-gray-300 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-gray-700 hover:bg-gray-50"
+        >
+          Reset Filters
+        </button>
+        <span className="text-xs text-gray-400">Tip: press / to focus search.</span>
+      </div>
+
+      {results && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="card p-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Materials</p>
+            <p className="mt-1 text-xl font-bold text-gray-900">{resultSummary.materials}</p>
+          </div>
+          <div className="card p-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Projects</p>
+            <p className="mt-1 text-xl font-bold text-gray-900">{resultSummary.projects}</p>
+          </div>
+          <div className="card p-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Customers</p>
+            <p className="mt-1 text-xl font-bold text-gray-900">{resultSummary.customers}</p>
+          </div>
+          <div className="card p-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Vendors</p>
+            <p className="mt-1 text-xl font-bold text-gray-900">{resultSummary.vendors}</p>
+          </div>
+        </div>
+      )}
 
       {/* Results */}
       {query.trim().length < 2 && (

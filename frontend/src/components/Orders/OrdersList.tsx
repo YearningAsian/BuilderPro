@@ -79,12 +79,22 @@ const PROCUREMENT_STYLES: Record<ProcurementState, string> = {
 
 const STATUS_OPTIONS: Array<ProjectStatus | "all"> = ["all", "active", "draft", "closed"];
 const ORDER_STATUS_OPTIONS: OrderStatus[] = ["draft", "ordered", "received", "cancelled"];
+const PROCUREMENT_FILTER_OPTIONS: Array<ProcurementState | "all"> = [
+  "all",
+  "ready",
+  "needs-vendor",
+  "planning",
+  "ordered",
+  "closed",
+];
 
 export function OrdersList() {
   const { projects, getMaterialById, getVendorById, updateProjectItem, refreshData } = useStore();
   const [statusFilter, setStatusFilter] = useState<ProjectStatus | "all">("all");
+  const [procurementFilter, setProcurementFilter] = useState<ProcurementState | "all">("all");
   const [projectFilter, setProjectFilter] = useState<string>("all");
   const [vendorFilter, setVendorFilter] = useState<string>("all");
+  const [textFilter, setTextFilter] = useState("");
   const [orderItems, setOrderItems] = useState<ProjectItem[]>([]);
   const [isLoadingOrderItems, setIsLoadingOrderItems] = useState(true);
   const [orderItemsError, setOrderItemsError] = useState("");
@@ -175,11 +185,27 @@ export function OrdersList() {
     () =>
       orderRows.filter((row) => {
         const statusMatch = statusFilter === "all" || row.status === statusFilter;
+        const procurementMatch = procurementFilter === "all" || row.procurementState === procurementFilter;
         const projectMatch = projectFilter === "all" || row.projectName === projectFilter;
         const vendorMatch = vendorFilter === "all" || row.vendorName === vendorFilter;
-        return statusMatch && projectMatch && vendorMatch;
+        const normalizedText = textFilter.trim().toLowerCase();
+        const textMatch =
+          normalizedText.length === 0 ||
+          [
+            row.projectName,
+            row.materialName,
+            row.vendorName,
+            row.poNumber,
+            row.trackingNumber,
+            row.carrier,
+            row.notes ?? "",
+          ]
+            .join(" ")
+            .toLowerCase()
+            .includes(normalizedText);
+        return statusMatch && procurementMatch && projectMatch && vendorMatch && textMatch;
       }),
-    [orderRows, statusFilter, projectFilter, vendorFilter],
+    [orderRows, statusFilter, procurementFilter, projectFilter, vendorFilter, textFilter],
   );
 
   const totalSpend = useMemo(
@@ -204,6 +230,26 @@ export function OrdersList() {
 
   const needsVendorCount = useMemo(
     () => filteredRows.filter((row) => row.procurementState === "needs-vendor").length,
+    [filteredRows],
+  );
+
+  const overdueCount = useMemo(
+    () =>
+      filteredRows.filter((row) => {
+        if (!row.expectedDeliveryAt || row.orderStatus === "received") return false;
+        return new Date(row.expectedDeliveryAt).getTime() < Date.now();
+      }).length,
+    [filteredRows],
+  );
+
+  const missingTrackingCount = useMemo(
+    () =>
+      filteredRows.filter(
+        (row) =>
+          row.orderStatus === "ordered" &&
+          !row.trackingNumber.trim() &&
+          !row.trackingUrl.trim(),
+      ).length,
     [filteredRows],
   );
 
@@ -610,6 +656,19 @@ export function OrdersList() {
         </div>
       </div>
 
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="card p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Overdue deliveries</p>
+          <p className="mt-2 text-2xl font-bold text-rose-700">{overdueCount}</p>
+          <p className="text-sm text-gray-500">Ordered lines with ETA already in the past</p>
+        </div>
+        <div className="card p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Missing tracking</p>
+          <p className="mt-2 text-2xl font-bold text-amber-700">{missingTrackingCount}</p>
+          <p className="text-sm text-gray-500">Ordered lines without tracking number or tracking URL</p>
+        </div>
+      </div>
+
       {orderItemsError && (
         <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
           {orderItemsError}
@@ -873,6 +932,16 @@ export function OrdersList() {
           </div>
         </div>
 
+        <label className="space-y-1 text-sm text-gray-600 block">
+          <span className="font-medium text-gray-700">Search lines</span>
+          <input
+            value={textFilter}
+            onChange={(event) => setTextFilter(event.target.value)}
+            placeholder="Search project, material, vendor, PO, carrier, tracking..."
+            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700"
+          />
+        </label>
+
         <div className="flex flex-wrap items-center gap-2">
           {STATUS_OPTIONS.map((option) => {
             const active = statusFilter === option;
@@ -891,6 +960,39 @@ export function OrdersList() {
               </button>
             );
           })}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {PROCUREMENT_FILTER_OPTIONS.map((option) => {
+            const active = procurementFilter === option;
+            return (
+              <button
+                key={option}
+                type="button"
+                onClick={() => setProcurementFilter(option)}
+                className={`rounded-full px-3 py-1.5 text-sm font-medium transition-colors ${
+                  active
+                    ? "bg-slate-800 text-white"
+                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                }`}
+              >
+                {option === "all" ? "All procurement" : option}
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            onClick={() => {
+              setStatusFilter("all");
+              setProcurementFilter("all");
+              setProjectFilter("all");
+              setVendorFilter("all");
+              setTextFilter("");
+            }}
+            className="rounded-full border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            Reset filters
+          </button>
         </div>
 
         <div className="grid gap-3 md:grid-cols-2">

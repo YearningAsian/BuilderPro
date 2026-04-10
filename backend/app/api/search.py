@@ -2,7 +2,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy import or_
+from sqlalchemy import and_, case, func, or_
 from sqlalchemy.orm import Session
 
 from app.api.auth import get_current_user, get_current_workspace_id
@@ -10,6 +10,32 @@ from app.db.base import get_db
 from app.models.models import Customer, Material, Project, ProjectItem, User, Vendor
 
 router = APIRouter(prefix="/search", tags=["search"])
+
+
+def _normalized_terms(value: str) -> list[str]:
+    return [term.strip() for term in value.split() if term.strip()]
+
+
+def _apply_multi_term_filter(queryset, columns, terms: list[str]):
+    if not terms:
+        return queryset
+
+    predicates = []
+    for term in terms:
+        like_pattern = f"%{term}%"
+        predicates.append(or_(*[column.ilike(like_pattern) for column in columns]))
+
+    return queryset.filter(and_(*predicates))
+
+
+def _relevance_rank_expression(primary_column, query_text: str):
+    lowered_column = func.lower(primary_column)
+    lowered_query = query_text.lower()
+    return case(
+        (lowered_column == lowered_query, 0),
+        (lowered_column.like(f"{lowered_query}%"), 1),
+        else_=2,
+    )
 
 
 class SearchMaterialResult(BaseModel):
@@ -80,6 +106,8 @@ def search_workspace(
             vendors=[],
         )
 
+    terms = _normalized_terms(query)
+
     materials: list[SearchMaterialResult] = []
     projects: list[SearchProjectResult] = []
     customers: list[SearchCustomerResult] = []
@@ -87,14 +115,10 @@ def search_workspace(
 
     if entity in {"all", "materials"}:
         materials_query = db.query(Material).filter(Material.workspace_id == current_workspace_id)
-
-        materials_query = materials_query.filter(
-            or_(
-                Material.name.ilike(f"%{query}%"),
-                Material.category.ilike(f"%{query}%"),
-                Material.sku.ilike(f"%{query}%"),
-                Material.unit_type.ilike(f"%{query}%"),
-            )
+        materials_query = _apply_multi_term_filter(
+            materials_query,
+            [Material.name, Material.category, Material.sku, Material.unit_type],
+            terms,
         )
 
         if material_category:
@@ -112,7 +136,12 @@ def search_workspace(
                 .distinct(Material.id)
             )
 
-        material_rows = materials_query.order_by(Material.name.asc()).limit(limit).all()
+        material_rows = (
+            materials_query
+            .order_by(_relevance_rank_expression(Material.name, query), Material.name.asc())
+            .limit(limit)
+            .all()
+        )
         materials = [
             SearchMaterialResult(
                 id=row.id,
@@ -128,12 +157,10 @@ def search_workspace(
 
     if entity in {"all", "projects"}:
         projects_query = db.query(Project).filter(Project.workspace_id == current_workspace_id)
-
-        projects_query = projects_query.filter(
-            or_(
-                Project.name.ilike(f"%{query}%"),
-                Project.status.ilike(f"%{query}%"),
-            )
+        projects_query = _apply_multi_term_filter(
+            projects_query,
+            [Project.name, Project.status],
+            terms,
         )
 
         if project_status:
@@ -151,7 +178,12 @@ def search_workspace(
                 .distinct(Project.id)
             )
 
-        project_rows = projects_query.order_by(Project.updated_at.desc()).limit(limit).all()
+        project_rows = (
+            projects_query
+            .order_by(_relevance_rank_expression(Project.name, query), Project.updated_at.desc())
+            .limit(limit)
+            .all()
+        )
         projects = [
             SearchProjectResult(
                 id=row.id,
@@ -166,13 +198,10 @@ def search_workspace(
 
     if entity in {"all", "customers"}:
         customers_query = db.query(Customer).filter(Customer.workspace_id == current_workspace_id)
-        customers_query = customers_query.filter(
-            or_(
-                Customer.name.ilike(f"%{query}%"),
-                Customer.email.ilike(f"%{query}%"),
-                Customer.phone.ilike(f"%{query}%"),
-                Customer.address.ilike(f"%{query}%"),
-            )
+        customers_query = _apply_multi_term_filter(
+            customers_query,
+            [Customer.name, Customer.email, Customer.phone, Customer.address],
+            terms,
         )
 
         if project_id is not None:
@@ -182,7 +211,12 @@ def search_workspace(
                 .distinct(Customer.id)
             )
 
-        customer_rows = customers_query.order_by(Customer.name.asc()).limit(limit).all()
+        customer_rows = (
+            customers_query
+            .order_by(_relevance_rank_expression(Customer.name, query), Customer.name.asc())
+            .limit(limit)
+            .all()
+        )
         customers = [
             SearchCustomerResult(
                 id=row.id,
@@ -195,13 +229,10 @@ def search_workspace(
 
     if entity in {"all", "vendors"}:
         vendors_query = db.query(Vendor).filter(Vendor.workspace_id == current_workspace_id)
-        vendors_query = vendors_query.filter(
-            or_(
-                Vendor.name.ilike(f"%{query}%"),
-                Vendor.email.ilike(f"%{query}%"),
-                Vendor.phone.ilike(f"%{query}%"),
-                Vendor.address.ilike(f"%{query}%"),
-            )
+        vendors_query = _apply_multi_term_filter(
+            vendors_query,
+            [Vendor.name, Vendor.email, Vendor.phone, Vendor.address],
+            terms,
         )
 
         if vendor_id is not None:
@@ -218,7 +249,12 @@ def search_workspace(
                 .distinct(Vendor.id)
             )
 
-        vendor_rows = vendors_query.order_by(Vendor.name.asc()).limit(limit).all()
+        vendor_rows = (
+            vendors_query
+            .order_by(_relevance_rank_expression(Vendor.name, query), Vendor.name.asc())
+            .limit(limit)
+            .all()
+        )
         vendors = [
             SearchVendorResult(
                 id=row.id,

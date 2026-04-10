@@ -126,6 +126,41 @@ export function Dashboard() {
     };
   }, [projects]);
 
+  const actionQueue = useMemo(() => {
+    const orderedWithoutTracking = projects.reduce((count, project) => {
+      return (
+        count +
+        project.items.filter(
+          (item) =>
+            item.order_status === "ordered" &&
+            (!item.tracking_number || !item.tracking_number.trim()) &&
+            (!item.tracking_url || !item.tracking_url.trim()),
+        ).length
+      );
+    }, 0);
+
+    return [
+      {
+        label: "Stale Draft Projects",
+        value: alerts.draftStaleCount,
+        hint: "Projects that need scope review before they go active.",
+        href: "/projects",
+      },
+      {
+        label: "Ordered Lines Missing Tracking",
+        value: orderedWithoutTracking,
+        hint: "Add carrier/tracking to reduce fulfillment ambiguity.",
+        href: "/orders",
+      },
+      {
+        label: "Empty Projects",
+        value: alerts.projectsMissingItems,
+        hint: "Projects without line items are unlikely to convert.",
+        href: "/projects",
+      },
+    ];
+  }, [alerts.draftStaleCount, alerts.projectsMissingItems, projects]);
+
   const kpis: { label: string; value: string; color: string; href: string }[] = [
     {
       label: "Active Projects",
@@ -254,17 +289,46 @@ export function Dashboard() {
             <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">Stale Drafts</p>
             <p className="text-xl font-bold text-amber-900">{alerts.draftStaleCount}</p>
             <p className="text-xs text-amber-700">Draft projects not updated in 7+ days</p>
+            <Link href="/projects" className="mt-2 inline-block text-xs font-semibold text-amber-800 hover:underline">
+              Review drafts
+            </Link>
           </div>
           <div className="rounded-lg border border-sky-200 bg-sky-50 p-3">
             <p className="text-xs font-semibold uppercase tracking-wide text-sky-700">Empty Projects</p>
             <p className="text-xl font-bold text-sky-900">{alerts.projectsMissingItems}</p>
             <p className="text-xs text-sky-700">Projects with zero line items</p>
+            <Link href="/projects" className="mt-2 inline-block text-xs font-semibold text-sky-800 hover:underline">
+              Fill project items
+            </Link>
           </div>
           <div className="rounded-lg border border-rose-200 bg-rose-50 p-3">
             <p className="text-xs font-semibold uppercase tracking-wide text-rose-700">Overdue Deliveries</p>
             <p className="text-xl font-bold text-rose-900">{alerts.overdueDeliveries}</p>
             <p className="text-xs text-rose-700">Ordered lines past expected delivery date</p>
+            <Link href="/orders" className="mt-2 inline-block text-xs font-semibold text-rose-800 hover:underline">
+              Resolve deliveries
+            </Link>
           </div>
+        </div>
+      </section>
+
+      <section className="card p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Action Queue</h2>
+          <Link href="/settings" className="text-xs font-medium text-orange-500 hover:text-orange-600">Team settings</Link>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {actionQueue.map((entry) => (
+            <Link
+              key={entry.label}
+              href={entry.href}
+              className="rounded-lg border border-gray-200 bg-white p-3 hover:border-orange-300 hover:bg-orange-50/40 transition-colors"
+            >
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">{entry.label}</p>
+              <p className="mt-1 text-xl font-bold text-gray-900">{entry.value}</p>
+              <p className="mt-1 text-xs text-gray-600">{entry.hint}</p>
+            </Link>
+          ))}
         </div>
       </section>
 

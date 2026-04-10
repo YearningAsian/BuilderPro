@@ -22,7 +22,6 @@ from app.core.config import (
     SUPABASE_KEY,
     SUPABASE_URL,
 )
-from app.core.email import build_invite_join_url, is_invite_email_configured, send_workspace_invite_email
 from app.db.base import get_db
 from app.models.models import AuditLog, Material, Project, User, Workspace, WorkspaceInvite, WorkspaceMember
 
@@ -85,9 +84,6 @@ class CreateInviteResponse(BaseModel):
     workspace_id: str
     invited_email: str
     expires_at: str
-    invite_url: str | None = None
-    email_sent: bool = False
-    delivery_message: str | None = None
 
 
 class WorkspaceInviteSummary(BaseModel):
@@ -1164,12 +1160,7 @@ def create_invite(
     if not inviter_user:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Inviter profile is not registered.")
 
-    try:
-        workspace_id = UUID(str(payload.workspace_id))
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid workspace id.") from exc
-
-    workspace = db.query(Workspace).filter(Workspace.id == workspace_id).first()
+    workspace = db.query(Workspace).filter(Workspace.id == payload.workspace_id).first()
     if not workspace:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found.")
 
@@ -1207,17 +1198,6 @@ def create_invite(
         resource_id=str(invite.id),
         details={"invited_email": invited_email, "expires_at": expires_at.isoformat()},
     )
-    invite_url = build_invite_join_url(invite_token, invited_email)
-    email_sent = False
-    delivery_message = "Invite link created. Email delivery is not configured yet, copy this link for now."
-    if is_invite_email_configured():
-        invite_url = send_workspace_invite_email(
-            invited_email=invited_email,
-            workspace_name=workspace.name,
-            invite_token=invite_token,
-        )
-        email_sent = True
-        delivery_message = f"Invite email sent to {invited_email}."
     db.commit()
 
     return CreateInviteResponse(
@@ -1225,9 +1205,6 @@ def create_invite(
         workspace_id=str(workspace.id),
         invited_email=invited_email,
         expires_at=expires_at.isoformat(),
-        invite_url=invite_url,
-        email_sent=email_sent,
-        delivery_message=delivery_message,
     )
 
 
@@ -1298,18 +1275,6 @@ def resend_workspace_invite(
         resource_id=str(invite.id),
         details={"invited_email": invite.invited_email, "expires_at": invite.expires_at.isoformat()},
     )
-    workspace = db.query(Workspace).filter(Workspace.id == invite.workspace_id).first()
-    invite_url = build_invite_join_url(invite.invite_token, invite.invited_email)
-    email_sent = False
-    delivery_message = "Invite link refreshed. Email delivery is not configured yet, copy this link for now."
-    if is_invite_email_configured():
-        invite_url = send_workspace_invite_email(
-            invited_email=invite.invited_email,
-            workspace_name=workspace.name if workspace else "your BuilderPro workspace",
-            invite_token=invite.invite_token,
-        )
-        email_sent = True
-        delivery_message = f"Invite email resent to {invite.invited_email}."
     db.commit()
 
     return CreateInviteResponse(
@@ -1317,9 +1282,6 @@ def resend_workspace_invite(
         workspace_id=str(invite.workspace_id),
         invited_email=invite.invited_email,
         expires_at=invite.expires_at.isoformat(),
-        invite_url=invite_url,
-        email_sent=email_sent,
-        delivery_message=delivery_message,
     )
 
 
