@@ -2,11 +2,11 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, Suspense, useMemo, useState } from "react";
 
 import { authApi } from "@/services/api";
 
-export default function ForgotPasswordPage() {
+function ForgotPasswordPageContent() {
   const searchParams = useSearchParams();
   const prefilledToken = useMemo(() => searchParams.get("token") ?? "", [searchParams]);
   const prefilledTokenHash = useMemo(() => searchParams.get("token_hash") ?? "", [searchParams]);
@@ -210,5 +210,22 @@ export default function ForgotPasswordPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function ForgotPasswordPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-gray-50 px-6 py-10 sm:px-10 sm:py-14 flex items-center justify-center">
+          <div className="card w-full max-w-lg p-8 animate-fade-in space-y-2">
+            <h1 className="text-2xl font-semibold text-gray-900">Forgot password</h1>
+            <p className="text-sm text-gray-600">Loading recovery tools...</p>
+          </div>
+        </div>
+      }
+    >
+      <ForgotPasswordPageContent />
+    </Suspense>
   );
 }

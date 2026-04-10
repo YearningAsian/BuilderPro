@@ -58,7 +58,7 @@ interface StoreValue {
     patch: Partial<Pick<ProjectItem, "quantity" | "waste_pct" | "unit_cost" | "order_status" | "po_number" | "purchase_notes" | "expected_delivery_at" | "carrier" | "tracking_number" | "tracking_url" | "notes">>,
   ) => Promise<void>;
 
-  createProject: (name: string, customerId: string) => Promise<Project | null>;
+  createProject: (name: string, customerId: string) => Promise<Project>;
   updateProject: (projectId: string, data: Partial<Project>) => Promise<Project>;
   duplicateProject: (
     projectId: string,

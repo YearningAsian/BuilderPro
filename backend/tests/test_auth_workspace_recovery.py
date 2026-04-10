@@ -15,6 +15,7 @@ from app.api.auth import (
     list_workspace_invites,
     list_audit_events,
     list_workspace_members,
+    resend_workspace_invite,
     revoke_workspace_invite,
     update_workspace_member,
 )
@@ -267,6 +268,137 @@ class WorkspaceRecoveryTests(unittest.TestCase):
 
             self.assertEqual(len(projects), 1)
             self.assertEqual(projects[0].id, teammate_project.id)
+        finally:
+            db.close()
+
+    def test_resend_workspace_invite_refreshes_token_and_expiry(self):
+        db = self.make_session()
+        try:
+            admin = User(email="admin@example.com", full_name="Admin", role="admin")
+            workspace = Workspace(name="Admin Workspace")
+            db.add_all([admin, workspace])
+            db.flush()
+
+            membership = WorkspaceMember(workspace_id=workspace.id, user_id=admin.id, role="admin")
+            invite = WorkspaceInvite(
+                workspace_id=workspace.id,
+                invited_email="worker@example.com",
+                invite_token="original-token",
+                invited_by_user_id=admin.id,
+                expires_at=datetime.now(timezone.utc) + timedelta(days=1),
+            )
+            db.add_all([membership, invite])
+            db.commit()
+            db.refresh(invite)
+
+            previous_expiry = invite.expires_at
+
+            response = resend_workspace_invite(
+                invite_id=str(invite.id),
+                db=db,
+                current_user=admin,
+                current_workspace_id=workspace.id,
+            )
+
+            db.refresh(invite)
+            self.assertEqual(response.invited_email, "worker@example.com")
+            self.assertEqual(response.workspace_id, str(workspace.id))
+            self.assertNotEqual(response.invite_token, "original-token")
+            self.assertEqual(invite.invite_token, response.invite_token)
+            self.assertGreater(invite.expires_at, previous_expiry)
+
+            audit_event = db.query(AuditLog).filter(AuditLog.action == "member.invite_resent").one()
+            self.assertEqual(audit_event.workspace_id, workspace.id)
+        finally:
+            db.close()
+
+    def test_resend_workspace_invite_rejects_missing_invite(self):
+        db = self.make_session()
+        try:
+            admin = User(email="admin@example.com", full_name="Admin", role="admin")
+            workspace = Workspace(name="Admin Workspace")
+            db.add_all([admin, workspace])
+            db.flush()
+
+            db.add(WorkspaceMember(workspace_id=workspace.id, user_id=admin.id, role="admin"))
+            db.commit()
+
+            with self.assertRaises(HTTPException) as ctx:
+                resend_workspace_invite(
+                    invite_id="00000000-0000-0000-0000-000000000001",
+                    db=db,
+                    current_user=admin,
+                    current_workspace_id=workspace.id,
+                )
+
+            self.assertEqual(ctx.exception.status_code, 404)
+        finally:
+            db.close()
+
+    def test_resend_workspace_invite_rejects_accepted_invite(self):
+        db = self.make_session()
+        try:
+            admin = User(email="admin@example.com", full_name="Admin", role="admin")
+            workspace = Workspace(name="Admin Workspace")
+            db.add_all([admin, workspace])
+            db.flush()
+
+            membership = WorkspaceMember(workspace_id=workspace.id, user_id=admin.id, role="admin")
+            invite = WorkspaceInvite(
+                workspace_id=workspace.id,
+                invited_email="worker@example.com",
+                invite_token="accepted-token",
+                invited_by_user_id=admin.id,
+                expires_at=datetime.now(timezone.utc) + timedelta(days=1),
+                accepted_at=datetime.now(timezone.utc),
+            )
+            db.add_all([membership, invite])
+            db.commit()
+
+            with self.assertRaises(HTTPException) as ctx:
+                resend_workspace_invite(
+                    invite_id=str(invite.id),
+                    db=db,
+                    current_user=admin,
+                    current_workspace_id=workspace.id,
+                )
+
+            self.assertEqual(ctx.exception.status_code, 409)
+        finally:
+            db.close()
+
+    def test_resend_workspace_invite_requires_admin_membership(self):
+        db = self.make_session()
+        try:
+            admin = User(email="admin@example.com", full_name="Admin", role="admin")
+            member = User(email="member@example.com", full_name="Member", role="user")
+            workspace = Workspace(name="Admin Workspace")
+            db.add_all([admin, member, workspace])
+            db.flush()
+
+            invite = WorkspaceInvite(
+                workspace_id=workspace.id,
+                invited_email="worker@example.com",
+                invite_token="token",
+                invited_by_user_id=admin.id,
+                expires_at=datetime.now(timezone.utc) + timedelta(days=1),
+            )
+            db.add_all([
+                WorkspaceMember(workspace_id=workspace.id, user_id=admin.id, role="admin"),
+                WorkspaceMember(workspace_id=workspace.id, user_id=member.id, role="user"),
+                invite,
+            ])
+            db.commit()
+
+            with self.assertRaises(HTTPException) as ctx:
+                resend_workspace_invite(
+                    invite_id=str(invite.id),
+                    db=db,
+                    current_user=member,
+                    current_workspace_id=workspace.id,
+                )
+
+            self.assertEqual(ctx.exception.status_code, 403)
         finally:
             db.close()
 

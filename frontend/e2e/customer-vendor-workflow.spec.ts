@@ -1,4 +1,5 @@
 import { expect, test, type Route } from "@playwright/test";
+import type { Vendor } from "@/types";
 
 const sessionPayload = {
   email: "owner@example.com",
@@ -163,7 +164,7 @@ test("customers page supports create and detail workflows via backend endpoints"
 });
 
 test("vendors page supports detail, update, and delete workflows via backend endpoints", async ({ page }) => {
-  const vendors = [baseVendor()];
+  const vendors: Vendor[] = [baseVendor()];
   const materials = [
     {
       id: "51111111-1111-1111-1111-111111111111",

@@ -119,6 +119,11 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
     setProjectFormError(null);
     setProjectFormStatus(null);
 
+    if (!project) {
+      setProjectFormError("Project not found.");
+      return;
+    }
+
     const normalizedName = projectForm.name.trim();
     if (!normalizedName) {
       setProjectFormError("Project name is required.");

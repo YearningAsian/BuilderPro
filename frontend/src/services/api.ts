@@ -561,6 +561,11 @@ export const authApi = {
       `${BASE}/auth/invites?include_expired=${includeExpired ? "true" : "false"}`,
       { headers: getAuthHeaders() },
     ),
+  resendInvite: (inviteId: string) =>
+    request<CreateInviteResponse>(`${BASE}/auth/invites/${encodeURIComponent(inviteId)}/resend`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+    }),
   revokeInvite: (inviteId: string) =>
     request<void>(`${BASE}/auth/invites/${encodeURIComponent(inviteId)}`, {
       method: "DELETE",

@@ -130,11 +130,18 @@ function RecordItemRow({
   const { getMaterialById, updateProjectItem, removeItemFromProject } =
     useStore();
   const material = getMaterialById(item.material_id);
+  const [isNotesOpen, setIsNotesOpen] = useState(false);
+  const [notesDraft, setNotesDraft] = useState(item.notes ?? "");
+  const [isSavingNotes, setIsSavingNotes] = useState(false);
   const purchasingMeta = [
     item.po_number ? `PO ${item.po_number}` : null,
     item.expected_delivery_at ? `ETA ${formatDate(item.expected_delivery_at)}` : null,
     material?.default_vendor_id ? "Vendor assigned" : "No vendor",
   ].filter(Boolean);
+
+  useEffect(() => {
+    setNotesDraft(item.notes ?? "");
+  }, [item.notes]);
 
   const handleChange = useCallback(
     (field: "quantity" | "unit_cost" | "waste_pct", raw: string) => {
@@ -145,86 +152,163 @@ function RecordItemRow({
     [projectId, item.id, updateProjectItem],
   );
 
+  const handleSaveNotes = useCallback(async () => {
+    const normalizedNotes = notesDraft.trim();
+    const nextNotes = normalizedNotes.length > 0 ? normalizedNotes : null;
+
+    if ((item.notes ?? null) === nextNotes) {
+      setIsNotesOpen(false);
+      return;
+    }
+
+    setIsSavingNotes(true);
+    try {
+      await updateProjectItem(projectId, item.id, { notes: nextNotes });
+      setIsNotesOpen(false);
+    } finally {
+      setIsSavingNotes(false);
+    }
+  }, [item.id, item.notes, notesDraft, projectId, updateProjectItem]);
+
+  const handleCancelNotes = useCallback(() => {
+    setNotesDraft(item.notes ?? "");
+    setIsNotesOpen(false);
+  }, [item.notes]);
+
   return (
-    <tr className="group">
-      <td>
-        <input
-          type="checkbox"
-          checked={isSelected}
-          disabled={!canSelectForPo}
-          onChange={() => onToggleSelection(item.id)}
-          className="h-4 w-4 rounded border-gray-300 text-orange-500 focus:ring-orange-400 disabled:cursor-not-allowed"
-          aria-label={`Select ${material?.name ?? "line item"} for purchase order`}
-        />
-      </td>
-      <td className="text-gray-400 text-xs font-mono">{index + 1}</td>
-      <td className="font-medium text-gray-900">
-        {material?.name ?? "Unknown"}
-        {material?.sku && (
-          <span className="ml-2 text-xs text-gray-400 font-mono">{material.sku}</span>
-        )}
-        <div className="mt-1 flex flex-wrap items-center gap-2">
-          <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${ORDER_STATUS_STYLES[item.order_status]}`}>
-            {item.order_status}
-          </span>
-          {purchasingMeta.map((entry) => (
-            <span key={entry} className="text-[11px] text-gray-500">
-              {entry}
-            </span>
-          ))}
-        </div>
-      </td>
-      <td>
-        <input
-          type="number"
-          min={0}
-          step="any"
-          value={item.quantity}
-          onChange={(e) => handleChange("quantity", e.target.value)}
-          className="w-20 px-2 py-1 text-sm border border-gray-200 rounded focus:ring-2 focus:ring-orange-400 focus:border-orange-400 focus:outline-none"
-        />
-      </td>
-      <td className="text-gray-500 text-sm">{item.unit_type}</td>
-      <td>
-        <input
-          type="number"
-          min={0}
-          step="0.01"
-          value={item.unit_cost}
-          onChange={(e) => handleChange("unit_cost", e.target.value)}
-          className="w-24 px-2 py-1 text-sm border border-gray-200 rounded font-mono focus:ring-2 focus:ring-orange-400 focus:border-orange-400 focus:outline-none"
-        />
-      </td>
-      <td>
-        <input
-          type="number"
-          min={0}
-          max={100}
-          step="0.1"
-          value={item.waste_pct}
-          onChange={(e) => handleChange("waste_pct", e.target.value)}
-          className="w-16 px-2 py-1 text-sm border border-gray-200 rounded focus:ring-2 focus:ring-orange-400 focus:border-orange-400 focus:outline-none"
-        />
-      </td>
-      <td className="font-mono text-sm text-gray-600">
-        {item.total_qty.toFixed(2)}
-      </td>
-      <td className="font-mono text-sm font-semibold text-gray-900">
-        {formatCurrency(item.line_subtotal)}
-      </td>
-      <td>
-        <button
-          type="button"
-          onClick={() => removeItemFromProject(projectId, item.id)}
-          className="opacity-0 group-hover:opacity-100 transition-opacity text-red-400 hover:text-red-600 p-1"
-          title="Remove item"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-          </svg>
-        </button>
-      </td>
-    </tr>
+    <>
+      <tr className="group">
+        <td>
+          <input
+            type="checkbox"
+            checked={isSelected}
+            disabled={!canSelectForPo}
+            onChange={() => onToggleSelection(item.id)}
+            className="h-4 w-4 rounded border-gray-300 text-orange-500 focus:ring-orange-400 disabled:cursor-not-allowed"
+            aria-label={`Select ${material?.name ?? "line item"} for purchase order`}
+          />
+        </td>
+        <td className="text-gray-400 text-xs font-mono">{index + 1}</td>
+        <td className="font-medium text-gray-900">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              {material?.name ?? "Unknown"}
+              {material?.sku && (
+                <span className="ml-2 text-xs text-gray-400 font-mono">{material.sku}</span>
+              )}
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${ORDER_STATUS_STYLES[item.order_status]}`}>
+                  {item.order_status}
+                </span>
+                {item.notes && (
+                  <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+                    Notes
+                  </span>
+                )}
+                {purchasingMeta.map((entry) => (
+                  <span key={entry} className="text-[11px] text-gray-500">
+                    {entry}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsNotesOpen((current) => !current)}
+              className="rounded-md border border-gray-200 px-2 py-1 text-[11px] font-semibold text-gray-600 hover:bg-gray-50"
+            >
+              {isNotesOpen ? "Hide notes" : item.notes ? "Edit notes" : "Add notes"}
+            </button>
+          </div>
+        </td>
+        <td>
+          <input
+            type="number"
+            min={0}
+            step="any"
+            value={item.quantity}
+            onChange={(e) => handleChange("quantity", e.target.value)}
+            className="w-20 px-2 py-1 text-sm border border-gray-200 rounded focus:ring-2 focus:ring-orange-400 focus:border-orange-400 focus:outline-none"
+          />
+        </td>
+        <td className="text-gray-500 text-sm">{item.unit_type}</td>
+        <td>
+          <input
+            type="number"
+            min={0}
+            step="0.01"
+            value={item.unit_cost}
+            onChange={(e) => handleChange("unit_cost", e.target.value)}
+            className="w-24 px-2 py-1 text-sm border border-gray-200 rounded font-mono focus:ring-2 focus:ring-orange-400 focus:border-orange-400 focus:outline-none"
+          />
+        </td>
+        <td>
+          <input
+            type="number"
+            min={0}
+            max={100}
+            step="0.1"
+            value={item.waste_pct}
+            onChange={(e) => handleChange("waste_pct", e.target.value)}
+            className="w-16 px-2 py-1 text-sm border border-gray-200 rounded focus:ring-2 focus:ring-orange-400 focus:border-orange-400 focus:outline-none"
+          />
+        </td>
+        <td className="font-mono text-sm text-gray-600">
+          {item.total_qty.toFixed(2)}
+        </td>
+        <td className="font-mono text-sm font-semibold text-gray-900">
+          {formatCurrency(item.line_subtotal)}
+        </td>
+        <td>
+          <button
+            type="button"
+            onClick={() => removeItemFromProject(projectId, item.id)}
+            className="opacity-0 group-hover:opacity-100 transition-opacity text-red-400 hover:text-red-600 p-1"
+            title="Remove item"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+          </button>
+        </td>
+      </tr>
+      {isNotesOpen && (
+        <tr className="bg-amber-50/40">
+          <td colSpan={10} className="px-4 py-3">
+            <div className="space-y-2 rounded-lg border border-amber-100 bg-white p-3">
+              <label className="block space-y-1 text-sm text-gray-700">
+                <span className="font-medium">Line item notes</span>
+                <textarea
+                  rows={3}
+                  value={notesDraft}
+                  onChange={(event) => setNotesDraft(event.target.value)}
+                  placeholder="Add install notes, sequencing, field measurements, or handoff details"
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+                />
+              </label>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleSaveNotes()}
+                  disabled={isSavingNotes}
+                  className="rounded-lg bg-orange-500 px-3 py-2 text-sm font-medium text-white hover:bg-orange-600 disabled:opacity-60"
+                >
+                  {isSavingNotes ? "Saving..." : "Save notes"}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCancelNotes}
+                  disabled={isSavingNotes}
+                  className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
   );
 }
 

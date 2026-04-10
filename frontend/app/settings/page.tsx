@@ -8,6 +8,7 @@ import { authApi } from "@/services/api";
 import type { AuditLogEntry, WorkspaceInviteSummary, WorkspaceMember, WorkspaceRole } from "@/types";
 
 type AuditFilter = "all" | "orders" | "members" | "invites" | "other";
+type InviteActionType = "resend" | "revoke" | null;
 
 function persistWorkspaceDetails(
   currentSession: BuilderProSession,
@@ -42,6 +43,10 @@ function buildInviteEmailUrl(recipientEmail: string, workspaceName: string, invi
   return `mailto:${encodeURIComponent(recipientEmail)}?subject=${subject}&body=${body}`;
 }
 
+function buildInviteUrl(origin: string, inviteToken: string, invitedEmail: string) {
+  return `${origin}/join-invite?token=${encodeURIComponent(inviteToken)}&email=${encodeURIComponent(invitedEmail)}`;
+}
+
 export default function SettingsPage() {
   const [session, setSession] = useState<BuilderProSession | null>(null);
   const [workspaceId, setWorkspaceId] = useState("");
@@ -74,6 +79,7 @@ export default function SettingsPage() {
   const [isLoadingAuditEvents, setIsLoadingAuditEvents] = useState(false);
   const [memberActionId, setMemberActionId] = useState<string | null>(null);
   const [inviteActionId, setInviteActionId] = useState<string | null>(null);
+  const [inviteActionType, setInviteActionType] = useState<InviteActionType>(null);
   const [auditFilter, setAuditFilter] = useState<AuditFilter>("all");
 
   useEffect(() => {
@@ -275,7 +281,7 @@ export default function SettingsPage() {
         expires_in_days: expiresInDays,
       });
 
-      const inviteUrl = `${window.location.origin}/join-invite?token=${encodeURIComponent(invite.invite_token)}&email=${encodeURIComponent(invite.invited_email)}`;
+      const inviteUrl = buildInviteUrl(window.location.origin, invite.invite_token, invite.invited_email);
       setInviteLink(inviteUrl);
       setInviteRecipient(invite.invited_email);
       setStatusMessage(`Invite prepared for ${invite.invited_email}. Your email app should open with the invite link ready to send.`);
@@ -367,6 +373,51 @@ export default function SettingsPage() {
     }
   };
 
+  const handleResendInvite = async (invite: WorkspaceInviteSummary) => {
+    setErrorMessage("");
+    setStatusMessage("");
+    setCopied(false);
+    setInviteActionId(invite.id);
+    setInviteActionType("resend");
+
+    try {
+      const resentInvite = await authApi.resendInvite(invite.id);
+      const inviteUrl = buildInviteUrl(
+        window.location.origin,
+        resentInvite.invite_token,
+        resentInvite.invited_email,
+      );
+
+      setInviteLink(inviteUrl);
+      setInviteRecipient(resentInvite.invited_email);
+      setStatusMessage(`Invite resent for ${resentInvite.invited_email}. Your email app should open with the refreshed invite link ready to send.`);
+
+      const [nextInvites, nextAuditEvents] = await Promise.all([
+        authApi.listInvites(),
+        authApi.listAuditEvents(),
+      ]);
+      setPendingInvites(nextInvites);
+      setAuditEvents(nextAuditEvents);
+
+      if (typeof window !== "undefined") {
+        window.location.href = buildInviteEmailUrl(
+          resentInvite.invited_email,
+          workspaceName || "your Builder Pro workspace",
+          inviteUrl,
+        );
+      }
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error && error.message
+          ? error.message
+          : "Unable to resend invite.",
+      );
+    } finally {
+      setInviteActionId(null);
+      setInviteActionType(null);
+    }
+  };
+
   const handleRevokeInvite = async (invite: WorkspaceInviteSummary) => {
     if (typeof window !== "undefined") {
       const confirmed = window.confirm(`Revoke invite for ${invite.invited_email}?`);
@@ -376,6 +427,7 @@ export default function SettingsPage() {
     setErrorMessage("");
     setStatusMessage("");
     setInviteActionId(invite.id);
+    setInviteActionType("revoke");
 
     try {
       await authApi.revokeInvite(invite.id);
@@ -394,6 +446,7 @@ export default function SettingsPage() {
       );
     } finally {
       setInviteActionId(null);
+      setInviteActionType(null);
     }
   };
 
@@ -593,6 +646,8 @@ export default function SettingsPage() {
               <div className="space-y-2">
                 {pendingInvites.map((invite) => {
                   const isBusy = inviteActionId === invite.id;
+                  const isResending = isBusy && inviteActionType === "resend";
+                  const isRevoking = isBusy && inviteActionType === "revoke";
                   return (
                     <div key={invite.id} className="rounded-lg border border-gray-200 p-3">
                       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -602,14 +657,24 @@ export default function SettingsPage() {
                             Expires {formatDate(invite.expires_at)}
                           </p>
                         </div>
-                        <button
-                          type="button"
-                          disabled={isBusy}
-                          onClick={() => void handleRevokeInvite(invite)}
-                          className="rounded-lg border border-red-300 px-2.5 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:border-red-200 disabled:text-red-300"
-                        >
-                          {isBusy ? "Revoking..." : "Revoke"}
-                        </button>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            disabled={isBusy}
+                            onClick={() => void handleResendInvite(invite)}
+                            className="rounded-lg border border-blue-300 px-2.5 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:border-blue-200 disabled:text-blue-300"
+                          >
+                            {isResending ? "Resending..." : "Resend"}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isBusy}
+                            onClick={() => void handleRevokeInvite(invite)}
+                            className="rounded-lg border border-red-300 px-2.5 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:border-red-200 disabled:text-red-300"
+                          >
+                            {isRevoking ? "Revoking..." : "Revoke"}
+                          </button>
+                        </div>
                       </div>
                     </div>
                   );

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useMemo, useState } from "react";
 import { persistSession } from "@/lib/auth";
+import type { WorkspaceRole } from "@/types";
 
 type FormErrors = {
   fullName?: string;
@@ -16,6 +17,10 @@ type FormErrors = {
 
 // RFC 5322 simplified email validation
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function normalizeWorkspaceRole(value: unknown): WorkspaceRole {
+  return value === "user" ? "user" : "admin";
+}
 
 export default function SignUpPage() {
   const router = useRouter();
@@ -104,7 +109,7 @@ export default function SignUpPage() {
 
       const requiresEmailConfirmation = Boolean(payload?.requires_email_confirmation);
       const accessToken = payload?.access_token as string | undefined;
-      const role = (payload?.role as string | undefined) || "admin";
+      const role = normalizeWorkspaceRole(payload?.role);
       const workspaceId = (payload?.workspace_id as string | undefined) || "";
       const workspaceName = (payload?.workspace_name as string | undefined) || "";
       const normalizedEmail = email.trim().toLowerCase();

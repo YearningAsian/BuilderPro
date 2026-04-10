@@ -1234,6 +1234,57 @@ def list_workspace_invites(
     return [invite for invite in summaries if not invite.is_expired]
 
 
+@router.post("/invites/{invite_id}/resend", response_model=CreateInviteResponse)
+def resend_workspace_invite(
+    invite_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_workspace_id=Depends(get_current_workspace_id),
+):
+    _require_workspace_admin(db, current_user, current_workspace_id)
+
+    try:
+        invite_lookup_id = UUID(str(invite_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid invite id.") from exc
+
+    invite = (
+        db.query(WorkspaceInvite)
+        .filter(
+            WorkspaceInvite.id == invite_lookup_id,
+            WorkspaceInvite.workspace_id == current_workspace_id,
+        )
+        .first()
+    )
+    if not invite:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invite not found.")
+
+    if invite.accepted_at is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Invite has already been accepted.")
+
+    invite.invite_token = secrets.token_urlsafe(24)
+    invite.expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+    invite.invited_by_user_id = current_user.id
+
+    _record_audit_event(
+        db,
+        workspace_id=current_workspace_id,
+        user_id=current_user.id,
+        action="member.invite_resent",
+        resource_type="workspace_invite",
+        resource_id=str(invite.id),
+        details={"invited_email": invite.invited_email, "expires_at": invite.expires_at.isoformat()},
+    )
+    db.commit()
+
+    return CreateInviteResponse(
+        invite_token=invite.invite_token,
+        workspace_id=str(invite.workspace_id),
+        invited_email=invite.invited_email,
+        expires_at=invite.expires_at.isoformat(),
+    )
+
+
 @router.delete("/invites/{invite_id}", status_code=status.HTTP_204_NO_CONTENT)
 def revoke_workspace_invite(
     invite_id: str,
