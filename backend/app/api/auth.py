@@ -16,12 +16,14 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.config import (
+    APP_BASE_URL,
     ENABLE_LOCAL_AUTH_FALLBACK,
     SECRET_KEY,
     SUPABASE_ADMIN_KEY,
     SUPABASE_KEY,
     SUPABASE_URL,
 )
+from app.core.email import is_invite_email_configured, send_workspace_invite_email
 from app.db.base import get_db
 from app.models.models import AuditLog, Material, Project, User, Workspace, WorkspaceInvite, WorkspaceMember
 
@@ -84,6 +86,9 @@ class CreateInviteResponse(BaseModel):
     workspace_id: str
     invited_email: str
     expires_at: str
+    invite_url: str | None = None
+    email_sent: bool = False
+    delivery_message: str | None = None
 
 
 class WorkspaceInviteSummary(BaseModel):
@@ -302,6 +307,11 @@ def _decode_local_access_token(token: str) -> str | None:
     if isinstance(email, str) and email.strip():
         return _normalize_email(email)
     return None
+
+
+def _fallback_invite_url(invite_token: str, invited_email: str) -> str:
+    base_url = APP_BASE_URL or "http://localhost:3500"
+    return f"{base_url.rstrip('/')}/join-invite?token={invite_token}&email={invited_email}"
 
 
 def _get_or_create_user(db: Session, email: str, full_name: str | None, role: str) -> User:
@@ -670,11 +680,24 @@ def sign_in(payload: SignInRequest, db: Session = Depends(get_db)):
     if not payload.password.strip():
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Password is required.")
 
-    auth = _supabase_request(
-        "POST",
-        "/auth/v1/token?grant_type=password",
-        payload={"email": email, "password": payload.password},
-    )
+    try:
+        auth = _supabase_request(
+            "POST",
+            "/auth/v1/token?grant_type=password",
+            payload={"email": email, "password": payload.password},
+        )
+    except HTTPException as exc:
+        detail = str(exc.detail).lower()
+        if exc.status_code == status.HTTP_400_BAD_REQUEST and (
+            "invalid login credentials" in detail
+            or "invalid credentials" in detail
+            or "invalid grant" in detail
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid email or password.",
+            ) from exc
+        raise
 
     access_token = auth.get("access_token")
     token_type = auth.get("token_type", "bearer")
@@ -1200,11 +1223,29 @@ def create_invite(
     )
     db.commit()
 
+    invite_url: str | None = None
+    email_sent = False
+    delivery_message: str | None = None
+
+    if is_invite_email_configured():
+        invite_url = send_workspace_invite_email(
+            invited_email=invited_email,
+            workspace_name=workspace.name,
+            invite_token=invite_token,
+        )
+        email_sent = True
+    else:
+        invite_url = _fallback_invite_url(invite_token, invited_email)
+        delivery_message = "Email delivery is not configured yet. Share the invite link manually."
+
     return CreateInviteResponse(
         invite_token=invite_token,
         workspace_id=str(workspace.id),
         invited_email=invited_email,
         expires_at=expires_at.isoformat(),
+        invite_url=invite_url,
+        email_sent=email_sent,
+        delivery_message=delivery_message,
     )
 
 
@@ -1277,11 +1318,30 @@ def resend_workspace_invite(
     )
     db.commit()
 
+    workspace = db.query(Workspace).filter(Workspace.id == invite.workspace_id).first()
+    invite_url: str | None = None
+    email_sent = False
+    delivery_message: str | None = None
+
+    if is_invite_email_configured():
+        invite_url = send_workspace_invite_email(
+            invited_email=invite.invited_email,
+            workspace_name=workspace.name if workspace else "your workspace",
+            invite_token=invite.invite_token,
+        )
+        email_sent = True
+    else:
+        invite_url = _fallback_invite_url(invite.invite_token, invite.invited_email)
+        delivery_message = "Email delivery is not configured yet. Share the invite link manually."
+
     return CreateInviteResponse(
         invite_token=invite.invite_token,
         workspace_id=str(invite.workspace_id),
         invited_email=invite.invited_email,
         expires_at=invite.expires_at.isoformat(),
+        invite_url=invite_url,
+        email_sent=email_sent,
+        delivery_message=delivery_message,
     )
 
 

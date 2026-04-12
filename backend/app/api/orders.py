@@ -250,7 +250,7 @@ def list_orders(
     return items
 
 
-@router.get("/{item_id}", response_model=ProjectItemSchema)
+@router.get("/{item_id:uuid}", response_model=ProjectItemSchema)
 def get_order(
     item_id: UUID,
     db: Session = Depends(get_db),
@@ -339,7 +339,7 @@ def create_order(
     return db_item
 
 
-@router.put("/{item_id}", response_model=ProjectItemSchema)
+@router.put("/{item_id:uuid}", response_model=ProjectItemSchema)
 def update_order(
     item_id: UUID,
     item: ProjectItemUpdate,
@@ -833,7 +833,7 @@ def purchase_order_document(
     return Response(content=html, media_type="text/html")
 
 
-@router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{item_id:uuid}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_order(
     item_id: UUID,
     db: Session = Depends(get_db),

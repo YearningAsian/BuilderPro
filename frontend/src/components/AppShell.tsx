@@ -14,10 +14,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const isAuthRoute = AUTH_ROUTES.includes(pathname);
   const [menuOpen, setMenuOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState<ReturnType<typeof getActiveSession>>(null);
+  const [isSessionReady, setIsSessionReady] = useState(false);
   const { signOut, isSigningOut } = useSignOut();
 
   useEffect(() => {
-    const syncSession = () => setCurrentUser(getActiveSession());
+    const syncSession = () => {
+      setCurrentUser(getActiveSession());
+      setIsSessionReady(true);
+    };
     const timer = window.setTimeout(syncSession, 0);
     window.addEventListener("focus", syncSession);
     window.addEventListener("storage", syncSession);
@@ -64,10 +68,19 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 {initials}
               </div>
               <div className="text-left">
-                <p className="text-sm font-medium text-gray-900">{currentUser?.email ?? "Builder User"}</p>
-                <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${roleBadgeClasses}`}>
-                  {roleLabel}
-                </span>
+                {isSessionReady ? (
+                  <>
+                    <p className="text-sm font-medium text-gray-900">{currentUser?.email ?? ""}</p>
+                    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${roleBadgeClasses}`}>
+                      {roleLabel}
+                    </span>
+                  </>
+                ) : (
+                  <div className="space-y-1">
+                    <div className="h-3 w-32 rounded bg-gray-200 animate-pulse" />
+                    <div className="h-5 w-24 rounded-full bg-gray-200 animate-pulse" />
+                  </div>
+                )}
               </div>
               <svg className="w-4 h-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />

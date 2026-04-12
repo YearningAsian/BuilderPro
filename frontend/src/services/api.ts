@@ -182,6 +182,15 @@ function handleExpiredSession(message: string) {
   window.location.replace(signInUrl.toString());
 }
 
+function isExpiredTokenError(status: number, message: string): boolean {
+  if (!message.trim()) return false;
+
+  const mentionsJwtExpiry =
+    /invalid jwt|token is expired|jwt expired|invalid claims|unable to parse or verify signature/i.test(message);
+
+  return mentionsJwtExpiry && (status === 400 || status === 401 || status === 403);
+}
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const session = getActiveSession();
   const authHeaders: HeadersInit = session?.accessToken
@@ -220,9 +229,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
       detailMessage = payload;
     }
 
-    const isExpiredToken =
-      res.status === 401 &&
-      /invalid jwt|token is expired|jwt expired|invalid claims/i.test(detailMessage);
+    const isExpiredToken = isExpiredTokenError(res.status, detailMessage || bodyText);
 
     if (isExpiredToken) {
       handleExpiredSession("Your session expired. Please sign in again.");
@@ -255,6 +262,9 @@ async function requestText(url: string, init?: RequestInit): Promise<string> {
 
   const bodyText = await res.text().catch(() => "");
   if (!res.ok) {
+    if (isExpiredTokenError(res.status, bodyText)) {
+      handleExpiredSession("Your session expired. Please sign in again.");
+    }
     throw new Error(bodyText || `API ${res.status}`);
   }
   return bodyText;

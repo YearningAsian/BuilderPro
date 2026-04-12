@@ -80,13 +80,17 @@ export default function Navigation() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState<ReturnType<typeof getActiveSession>>(null);
+  const [isSessionReady, setIsSessionReady] = useState(false);
   const [availableWorkspaces, setAvailableWorkspaces] = useState<SessionWorkspaceSummary[]>([]);
   const [workspaceError, setWorkspaceError] = useState("");
   const [isSwitchingWorkspace, setIsSwitchingWorkspace] = useState(false);
   const { signOut, isSigningOut } = useSignOut();
 
   useEffect(() => {
-    const syncSession = () => setCurrentUser(getActiveSession());
+    const syncSession = () => {
+      setCurrentUser(getActiveSession());
+      setIsSessionReady(true);
+    };
     const timer = window.setTimeout(syncSession, 0);
     window.addEventListener("focus", syncSession);
     window.addEventListener("storage", syncSession);
@@ -200,11 +204,21 @@ export default function Navigation() {
         <div className="px-3 py-4 border-t border-white/10 space-y-2">
           <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2">
             <p className="text-[11px] uppercase tracking-wide text-gray-400">Signed in as</p>
-            <p className="mt-1 truncate text-sm font-medium text-white">{currentUser?.email ?? "builder@pro"}</p>
-            <span className={`mt-2 inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${roleBadgeClasses}`}>
-              {roleLabel}
-            </span>
-            <p className="mt-2 text-xs text-gray-300">{currentUser?.workspaceName ?? "No workspace selected"}</p>
+            {isSessionReady ? (
+              <>
+                <p className="mt-1 truncate text-sm font-medium text-white">{currentUser?.email ?? ""}</p>
+                <span className={`mt-2 inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${roleBadgeClasses}`}>
+                  {roleLabel}
+                </span>
+                <p className="mt-2 text-xs text-gray-300">{currentUser?.workspaceName ?? ""}</p>
+              </>
+            ) : (
+              <div className="mt-2 space-y-2">
+                <div className="h-3 w-36 rounded bg-white/10 animate-pulse" />
+                <div className="h-5 w-24 rounded-full bg-white/10 animate-pulse" />
+                <div className="h-3 w-28 rounded bg-white/10 animate-pulse" />
+              </div>
+            )}
             {canSwitchWorkspaces && (
               <label className="mt-3 block text-[11px] uppercase tracking-wide text-gray-400">
                 Active workspace

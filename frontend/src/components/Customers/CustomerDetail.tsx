@@ -157,7 +157,7 @@ export function CustomerDetail({ customerId }: { customerId: string }) {
         return;
       }
 
-      if ((event.key === "e" || event.key === "E") && isAdmin) {
+      if ((event.key === "e" || event.key === "E") && isAdmin && customer) {
         event.preventDefault();
         setFormError("");
         setFormStatus("");

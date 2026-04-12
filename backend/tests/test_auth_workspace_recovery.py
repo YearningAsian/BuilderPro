@@ -8,6 +8,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.api.auth import (
     CreateInviteRequest,
+    SignInRequest,
     WorkspaceMemberUpdateRequest,
     _membership_role_for_session,
     _register_supabase_user_with_session,
@@ -19,6 +20,7 @@ from app.api.auth import (
     list_workspace_members,
     resend_workspace_invite,
     revoke_workspace_invite,
+    sign_in,
     update_workspace_member,
 )
 from app.backfill_workspace_ids import backfill_workspace_ids
@@ -220,6 +222,20 @@ class WorkspaceRecoveryTests(unittest.TestCase):
         self.assertTrue(access_token.startswith("dev."))
         self.assertEqual(token_type, "bearer")
         self.assertFalse(requires_email_confirmation)
+
+    @patch("app.api.auth._supabase_request")
+    def test_signin_maps_invalid_credentials_400_to_401(self, mock_supabase_request):
+        mock_supabase_request.side_effect = HTTPException(status_code=400, detail="Invalid login credentials")
+
+        db = self.make_session()
+        try:
+            with self.assertRaises(HTTPException) as context:
+                sign_in(SignInRequest(email="owner@example.com", password="WrongPass123"), db=db)
+
+            self.assertEqual(context.exception.status_code, 401)
+            self.assertEqual(context.exception.detail, "Invalid email or password.")
+        finally:
+            db.close()
 
     def test_list_projects_only_returns_current_workspace_projects(self):
         db = self.make_session()
