@@ -3,8 +3,8 @@
 ## Fastest Way (Run Everything)
 
 ### Prerequisites
-- Python 3.8+
-- Node.js + npm
+- macOS with Homebrew, or a machine that already has Python 3.11+ and Node.js 20.9+ installed
+- npm
 
 ### Start the full stack
 From the project root:
@@ -22,11 +22,16 @@ This starts:
 Press `Ctrl+C` in that terminal to stop both services.
 
 ### What `run-all.sh` does
+- Checks for Python 3.11+ and Node.js 20.9+
+- Auto-installs Python with Homebrew when missing
+- Auto-installs Node.js through `nvm` when available, otherwise Homebrew on macOS
 - Creates `backend/.venv` if missing
 - Installs backend dependencies when needed
 - Installs frontend dependencies when needed
 - Starts backend + frontend together
 - Uses SQLite fallback automatically only when no backend DB config is provided
+
+If Homebrew or `nvm` are not available, the script exits with the exact install command needed for the current machine.
 
 ---
 

@@ -9,6 +9,10 @@ BACKEND_PORT="${BACKEND_PORT:-8000}"
 FRONTEND_PORT="${FRONTEND_PORT:-3500}"
 BACKEND_DEPS_STAMP="$BACKEND_DIR/.venv/.deps_installed"
 FRONTEND_DEPS_STAMP="$FRONTEND_DIR/node_modules/.deps_installed"
+MIN_PYTHON_VERSION="${MIN_PYTHON_VERSION:-3.11}"
+MIN_NODE_MAJOR="${MIN_NODE_MAJOR:-20}"
+MIN_NODE_MINOR="${MIN_NODE_MINOR:-9}"
+NVM_VERSION_FILE="$ROOT_DIR/.nvmrc"
 
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -29,6 +33,148 @@ pick_python() {
   fi
 
   echo ""
+}
+
+load_nvm() {
+  if command -v nvm >/dev/null 2>&1; then
+    return 0
+  fi
+
+  local nvm_dir="${NVM_DIR:-$HOME/.nvm}"
+  if [ -s "$nvm_dir/nvm.sh" ]; then
+    # shellcheck disable=SC1090
+    . "$nvm_dir/nvm.sh"
+  elif [ -s "/opt/homebrew/opt/nvm/nvm.sh" ]; then
+    # shellcheck disable=SC1091
+    . "/opt/homebrew/opt/nvm/nvm.sh"
+  elif [ -s "/usr/local/opt/nvm/nvm.sh" ]; then
+    # shellcheck disable=SC1091
+    . "/usr/local/opt/nvm/nvm.sh"
+  fi
+
+  command -v nvm >/dev/null 2>&1
+}
+
+python_version_meets_minimum() {
+  local python_cmd="$1"
+  "$python_cmd" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' >/dev/null 2>&1
+}
+
+node_version_meets_minimum() {
+  if ! command -v node >/dev/null 2>&1; then
+    return 1
+  fi
+
+  local version
+  version="$(node -p 'process.versions.node' 2>/dev/null || true)"
+  [ -n "$version" ] || return 1
+
+  local major minor
+  major="${version%%.*}"
+  minor="$(echo "$version" | cut -d. -f2)"
+
+  if [ "$major" -gt "$MIN_NODE_MAJOR" ]; then
+    return 0
+  fi
+
+  if [ "$major" -eq "$MIN_NODE_MAJOR" ] && [ "$minor" -ge "$MIN_NODE_MINOR" ]; then
+    return 0
+  fi
+
+  return 1
+}
+
+run_install_cmd() {
+  echo "Running: $*"
+  "$@"
+}
+
+ensure_python_available() {
+  local python_cmd
+  python_cmd="$(pick_python)"
+  if [ -n "$python_cmd" ] && python_version_meets_minimum "$python_cmd"; then
+    PYTHON_CMD="$python_cmd"
+    return 0
+  fi
+
+  echo "Python ${MIN_PYTHON_VERSION}+ is required."
+
+  if command -v brew >/dev/null 2>&1; then
+    echo "Installing Python via Homebrew..."
+    run_install_cmd brew install python@3.11
+
+    local brew_python=""
+    if brew --prefix python@3.11 >/dev/null 2>&1; then
+      brew_python="$(brew --prefix python@3.11)/bin/python3.11"
+    fi
+
+    if [ -n "$brew_python" ] && [ -x "$brew_python" ]; then
+      PYTHON_CMD="$brew_python"
+      return 0
+    fi
+
+    python_cmd="$(pick_python)"
+    if [ -n "$python_cmd" ] && python_version_meets_minimum "$python_cmd"; then
+      PYTHON_CMD="$python_cmd"
+      return 0
+    fi
+  fi
+
+  cat <<EOF
+Unable to provision Python automatically.
+Install Python ${MIN_PYTHON_VERSION}+ and re-run ./run-all.sh.
+
+macOS with Homebrew:
+  brew install python@3.11
+
+Ubuntu/Debian:
+  sudo apt-get update && sudo apt-get install -y python3 python3-venv python3-pip
+EOF
+  exit 1
+}
+
+ensure_node_available() {
+  if node_version_meets_minimum && command -v npm >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if load_nvm; then
+    local requested_node="20"
+    if [ -f "$NVM_VERSION_FILE" ]; then
+      requested_node="$(tr -d '[:space:]' <"$NVM_VERSION_FILE")"
+    fi
+    echo "Installing/activating Node.js ${requested_node} via nvm..."
+    nvm install "$requested_node"
+    nvm use "$requested_node"
+  elif command -v brew >/dev/null 2>&1; then
+    echo "Installing Node.js via Homebrew..."
+    run_install_cmd brew install node@20
+
+    local node_prefix=""
+    if node_prefix="$(brew --prefix node@20 2>/dev/null)"; then
+      PATH="$node_prefix/bin:$PATH"
+      export PATH
+    fi
+  fi
+
+  if node_version_meets_minimum && command -v npm >/dev/null 2>&1; then
+    return 0
+  fi
+
+  cat <<EOF
+Unable to provision a compatible Node.js runtime automatically.
+Install Node.js ${MIN_NODE_MAJOR}.${MIN_NODE_MINOR}+ and npm, then re-run ./run-all.sh.
+
+Preferred:
+  nvm install $(tr -d '[:space:]' <"$NVM_VERSION_FILE" 2>/dev/null || echo "20")
+
+macOS with Homebrew:
+  brew install node@20
+
+Ubuntu/Debian:
+  sudo apt-get update && sudo apt-get install -y nodejs npm
+EOF
+  exit 1
 }
 
 port_in_use() {
@@ -59,13 +205,9 @@ port_in_use() {
   return 1
 }
 
-PYTHON_CMD="$(pick_python)"
-if [ -z "$PYTHON_CMD" ]; then
-  echo "Missing required command: python3 or python"
-  exit 1
-fi
-
-require_command npm
+PYTHON_CMD=""
+ensure_python_available
+ensure_node_available
 
 if port_in_use "$FRONTEND_PORT"; then
   echo "Port $FRONTEND_PORT is already in use. Stop the existing frontend process, or run with a different FRONTEND_PORT."
