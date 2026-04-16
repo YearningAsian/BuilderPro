@@ -18,6 +18,7 @@ This starts:
 - Backend API on `http://localhost:8000`
 - API docs on `http://localhost:8000/docs`
 - Frontend on `http://localhost:3500`
+- A seeded demo workspace for local walkthroughs when SQLite fallback is used
 
 Press `Ctrl+C` in that terminal to stop both services.
 
@@ -28,10 +29,19 @@ Press `Ctrl+C` in that terminal to stop both services.
 - Creates `backend/.venv` if missing
 - Installs backend dependencies when needed
 - Installs frontend dependencies when needed
+- Seeds a demo workspace automatically for local SQLite startup
 - Starts backend + frontend together
 - Uses SQLite fallback automatically only when no backend DB config is provided
 
 If Homebrew or `nvm` are not available, the script exits with the exact install command needed for the current machine.
+
+### Demo flow
+
+`run-all.sh` now uses the local SQLite database by default for local demo sessions, even if `backend/.env` points at another database.
+If you want to force your external DB instead, run with `USE_LOCAL_SQLITE_FOR_RUN_ALL=0`.
+
+Open the homepage or sign-in page and click `Launch Interactive Demo`.
+That signs you into a seeded workspace with projects, materials, vendors, customers, search data, and purchase-order activity.
 
 ---
 

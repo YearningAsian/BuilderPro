@@ -16,6 +16,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<ReturnType<typeof getActiveSession>>(null);
   const [isSessionReady, setIsSessionReady] = useState(false);
   const { signOut, isSigningOut } = useSignOut();
+  const showShell = !isAuthRoute && Boolean(currentUser);
 
   useEffect(() => {
     const syncSession = () => {
@@ -53,8 +54,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <>
-      {!isAuthRoute && <Navigation />}
-      {!isAuthRoute && (
+      {showShell && <Navigation />}
+      {showShell && (
         <header className="hidden md:flex fixed top-0 right-0 left-56 h-14 bg-white border-b border-gray-200 z-20 items-center justify-end px-6">
           <div className="relative">
             <button
@@ -70,10 +71,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               <div className="text-left">
                 {isSessionReady ? (
                   <>
-                    <p className="text-sm font-medium text-gray-900">{currentUser?.email ?? ""}</p>
-                    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${roleBadgeClasses}`}>
+                      <p className="text-sm font-medium text-gray-900">{currentUser?.email ?? ""}</p>
+                      <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${roleBadgeClasses}`}>
                       {roleLabel}
-                    </span>
+                      </span>
+                      {currentUser?.email === "demo@builderpro.local" && (
+                        <span className="ml-2 inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+                          Demo Workspace
+                        </span>
+                      )}
                   </>
                 ) : (
                   <div className="space-y-1">
@@ -121,7 +127,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </header>
       )}
-      <main className={isAuthRoute ? "min-h-screen" : "md:ml-56 pt-14 md:pt-14 min-h-screen"}>
+      <main className={showShell ? "md:ml-56 pt-14 md:pt-14 min-h-screen" : "min-h-screen"}>
         {children}
       </main>
     </>

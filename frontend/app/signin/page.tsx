@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, Suspense, useEffect, useMemo, useState } from "react";
-import { persistSession } from "@/lib/auth";
+import { persistSession, startDemoSession } from "@/lib/auth";
 
 type FormErrors = {
   email?: string;
@@ -93,6 +93,7 @@ function SignInPageContent() {
   const [rememberSession, setRememberSession] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLaunchingDemo, setIsLaunchingDemo] = useState(false);
   const [errors, setErrors] = useState<FormErrors>({});
   const [signedOutMessage, setSignedOutMessage] = useState("");
 
@@ -110,9 +111,28 @@ function SignInPageContent() {
   }, [searchParams]);
 
   const canSubmit = useMemo(
-    () => email.trim().length > 0 && password.length > 0 && !isSubmitting,
-    [email, password, isSubmitting]
+    () => email.trim().length > 0 && password.length > 0 && !isSubmitting && !isLaunchingDemo,
+    [email, password, isSubmitting, isLaunchingDemo]
   );
+
+  const onLaunchDemo = async () => {
+    setErrors({});
+    setIsLaunchingDemo(true);
+
+    try {
+      await startDemoSession();
+      router.push("/");
+    } catch (error) {
+      setErrors({
+        submit:
+          error instanceof Error && error.message
+            ? error.message
+            : "Unable to launch the demo workspace.",
+      });
+    } finally {
+      setIsLaunchingDemo(false);
+    }
+  };
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -177,20 +197,45 @@ function SignInPageContent() {
           </p>
 
           <ul className="mt-8 space-y-3 text-sm text-gray-700">
-            <li>Manage construction projects</li>
-            <li>Build material estimates</li>
-            <li>Track vendors and orders</li>
-            <li>Centralize pricing and cost history</li>
+            <li>Walk a buyer through active projects and estimate value in seconds</li>
+            <li>Show real material, customer, and vendor records instead of an empty app</li>
+            <li>Demonstrate PO creation, shipment tracking, and receiving status</li>
+            <li>Search across workspace data with seeded construction examples</li>
           </ul>
         </div>
 
         <div className="card mt-10 p-5 max-w-lg">
-          <h2 className="text-sm font-semibold text-gray-900 mb-4">Workspace Preview</h2>
-          <div className="space-y-3">
-            <div className="h-3 rounded bg-gray-200 w-5/6" />
-            <div className="h-3 rounded bg-gray-200 w-2/3" />
-            <div className="h-3 rounded bg-gray-200 w-4/5" />
-            <div className="h-3 rounded bg-gray-200 w-1/2" />
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <h2 className="text-sm font-semibold text-gray-900">Interactive Demo Workspace</h2>
+              <p className="mt-1 text-sm text-gray-600">Northwind Builders is preloaded for buyer walkthroughs.</p>
+            </div>
+            <button
+              type="button"
+              onClick={onLaunchDemo}
+              disabled={isLaunchingDemo || isSubmitting}
+              className="rounded-full bg-gray-900 px-4 py-2 text-xs font-semibold text-white hover:bg-black disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isLaunchingDemo ? "Launching..." : "Open Demo"}
+            </button>
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+            <div className="rounded-xl bg-orange-50 px-3 py-3">
+              <p className="text-xs uppercase tracking-wide text-orange-700">Projects</p>
+              <p className="mt-1 text-lg font-semibold text-gray-900">3 seeded jobs</p>
+            </div>
+            <div className="rounded-xl bg-emerald-50 px-3 py-3">
+              <p className="text-xs uppercase tracking-wide text-emerald-700">Orders</p>
+              <p className="mt-1 text-lg font-semibold text-gray-900">Live PO status</p>
+            </div>
+            <div className="rounded-xl bg-sky-50 px-3 py-3">
+              <p className="text-xs uppercase tracking-wide text-sky-700">Catalog</p>
+              <p className="mt-1 text-lg font-semibold text-gray-900">Materials + vendors</p>
+            </div>
+            <div className="rounded-xl bg-amber-50 px-3 py-3">
+              <p className="text-xs uppercase tracking-wide text-amber-700">Search</p>
+              <p className="mt-1 text-lg font-semibold text-gray-900">Cross-workspace lookup</p>
+            </div>
           </div>
         </div>
       </section>
@@ -300,6 +345,15 @@ function SignInPageContent() {
               ) : (
                 "Sign In"
               )}
+            </button>
+
+            <button
+              type="button"
+              onClick={onLaunchDemo}
+              disabled={isLaunchingDemo || isSubmitting}
+              className="w-full rounded-lg border border-gray-300 bg-white py-2.5 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 transition-colors"
+            >
+              {isLaunchingDemo ? "Launching demo..." : "Launch Interactive Demo"}
             </button>
 
             <div className="flex items-center gap-3 py-1">

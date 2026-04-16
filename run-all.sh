@@ -13,6 +13,7 @@ MIN_PYTHON_VERSION="${MIN_PYTHON_VERSION:-3.11}"
 MIN_NODE_MAJOR="${MIN_NODE_MAJOR:-20}"
 MIN_NODE_MINOR="${MIN_NODE_MINOR:-9}"
 NVM_VERSION_FILE="$ROOT_DIR/.nvmrc"
+USE_LOCAL_SQLITE_FOR_RUN_ALL="${USE_LOCAL_SQLITE_FOR_RUN_ALL:-1}"
 
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -256,9 +257,11 @@ fi
 
 cd "$BACKEND_DIR"
 BACKEND_ENV=()
-if [ -z "${DATABASE_URL:-}" ] && [ ! -f ".env" ]; then
-  echo "No backend DATABASE_URL configured; using local SQLite fallback (backend/builderpro.db)."
+AUTO_SEED_DEMO=0
+if [ "$USE_LOCAL_SQLITE_FOR_RUN_ALL" = "1" ] && [ -z "${DATABASE_URL:-}" ]; then
+  echo "Using local SQLite for run-all.sh (backend/builderpro.db). Set USE_LOCAL_SQLITE_FOR_RUN_ALL=0 to use backend/.env or an external DATABASE_URL."
   BACKEND_ENV+=("DATABASE_URL=sqlite:///./builderpro.db")
+  AUTO_SEED_DEMO=1
 fi
 
 FRONTEND_ORIGIN="http://localhost:$FRONTEND_PORT"
@@ -266,6 +269,15 @@ if [ -n "${ALLOWED_ORIGINS:-}" ]; then
   BACKEND_ENV+=("ALLOWED_ORIGINS=${ALLOWED_ORIGINS},${FRONTEND_ORIGIN}")
 else
   BACKEND_ENV+=("ALLOWED_ORIGINS=${FRONTEND_ORIGIN}")
+fi
+
+if [ "$AUTO_SEED_DEMO" -eq 1 ]; then
+  echo "Seeding demo workspace for local buyer walkthroughs..."
+  if [ ${#BACKEND_ENV[@]} -gt 0 ]; then
+    env "${BACKEND_ENV[@]}" "$PYTHON_BIN" -m app.demo_seed >/dev/null
+  else
+    "$PYTHON_BIN" -m app.demo_seed >/dev/null
+  fi
 fi
 
 echo "Starting backend on http://localhost:$BACKEND_PORT ..."
@@ -299,6 +311,9 @@ echo "App URLs:"
 echo "- Frontend: http://localhost:$FRONTEND_PORT"
 echo "- Backend:  http://localhost:$BACKEND_PORT"
 echo "- API Docs: http://localhost:$BACKEND_PORT/docs"
+if [ "$AUTO_SEED_DEMO" -eq 1 ]; then
+  echo "- Demo:     Launch from the homepage or sign-in screen"
+fi
 echo ""
 echo "Tip: override ports with FRONTEND_PORT=3000 or BACKEND_PORT=8001 if needed."
 echo "Press Ctrl+C to stop both services."

@@ -25,6 +25,7 @@ from app.core.config import (
 )
 from app.core.email import is_invite_email_configured, send_workspace_invite_email
 from app.db.base import get_db
+from app.demo_seed import DEMO_EMAIL, ensure_demo_workspace
 from app.models.models import AuditLog, Material, Project, User, Workspace, WorkspaceInvite, WorkspaceMember
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -121,6 +122,15 @@ class JoinInviteResponse(BaseModel):
 
 class SignOutResponse(BaseModel):
     message: str
+
+
+class DemoSessionResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    role: str = "admin"
+    email: str
+    workspace_id: str
+    workspace_name: str
 
 
 class ForgotPasswordRequest(BaseModel):
@@ -744,7 +754,7 @@ def sign_out(response: Response, authorization: str | None = Header(default=None
         except HTTPException:
             access_token = None
 
-    if access_token:
+    if access_token and not _decode_local_access_token(access_token):
         try:
             _supabase_request("POST", "/auth/v1/logout", bearer_token=access_token)
         except HTTPException as exc:
@@ -753,6 +763,27 @@ def sign_out(response: Response, authorization: str | None = Header(default=None
 
     _clear_auth_cookies(response)
     return SignOutResponse(message="Signed out successfully")
+
+
+@router.post("/demo-session", response_model=DemoSessionResponse)
+def create_demo_session(db: Session = Depends(get_db)):
+    if not ENABLE_LOCAL_AUTH_FALLBACK:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Local demo sessions are disabled on this environment.",
+        )
+
+    user, workspace = ensure_demo_workspace(db)
+    access_token = _create_local_access_token(DEMO_EMAIL)
+
+    return DemoSessionResponse(
+        access_token=access_token,
+        token_type="bearer",
+        role="admin",
+        email=user.email,
+        workspace_id=str(workspace.id),
+        workspace_name=workspace.name,
+    )
 
 
 @router.post("/forgot-password", response_model=ForgotPasswordResponse)

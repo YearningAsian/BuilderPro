@@ -215,6 +215,59 @@ export async function requestSignOut(accessToken?: string): Promise<void> {
   });
 }
 
+type DemoSessionResponse = {
+  access_token: string;
+  token_type: string;
+  role: "admin" | "user";
+  email: string;
+  workspace_id?: string | null;
+  workspace_name?: string | null;
+};
+
+export async function startDemoSession(): Promise<BuilderProSession> {
+  const response = await fetch(`${API_BASE}/auth/demo-session`, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+    },
+  });
+
+  let payload: unknown = null;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
+  }
+
+  if (!response.ok || !payload || typeof payload !== "object") {
+    const detail =
+      payload &&
+      typeof payload === "object" &&
+      "detail" in payload &&
+      typeof (payload as { detail?: unknown }).detail === "string"
+        ? (payload as { detail: string }).detail
+        : "Unable to launch the demo workspace.";
+    throw new Error(detail);
+  }
+
+  const auth = payload as Partial<DemoSessionResponse>;
+  if (!auth.access_token || !auth.email || !auth.role) {
+    throw new Error("Unable to launch the demo workspace.");
+  }
+
+  return persistSession(
+    {
+      email: auth.email.trim().toLowerCase(),
+      role: auth.role,
+      accessToken: auth.access_token,
+      tokenType: auth.token_type || "bearer",
+      workspaceId: auth.workspace_id || undefined,
+      workspaceName: auth.workspace_name || undefined,
+    },
+    true,
+  );
+}
+
 export async function signOutUser(): Promise<void> {
   const session = getActiveSession();
 

@@ -163,7 +163,7 @@ export function VendorDetail({ vendorId }: { vendorId: string }) {
         return;
       }
 
-      if ((event.key === "e" || event.key === "E") && isAdmin) {
+      if ((event.key === "e" || event.key === "E") && isAdmin && vendor) {
         event.preventDefault();
         setFormError("");
         setFormStatus("");
