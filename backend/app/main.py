@@ -2,9 +2,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
-from app.core.config import API_V1_STR, PROJECT_NAME, PROJECT_VERSION, ALLOWED_ORIGINS
-from app.api import auth, materials, projects, orders, customers, vendors, search
-from app.db.base import SessionLocal
+from app.core.config import API_V1_STR, PROJECT_NAME, PROJECT_VERSION, ALLOWED_ORIGINS, DATABASE_URL
+from app.api import auth, materials, projects, orders, customers, vendors, search, reports
+from app.db.base import Base, SessionLocal, engine
+from app.models import models as _models  # noqa: F401
 
 # Initialize FastAPI app
 # NOTE: Schema is managed via Supabase migrations (supabase/migrations/).
@@ -32,6 +33,14 @@ app.include_router(orders.router, prefix=API_V1_STR)
 app.include_router(customers.router, prefix=API_V1_STR)
 app.include_router(vendors.router, prefix=API_V1_STR)
 app.include_router(search.router, prefix=API_V1_STR)
+app.include_router(reports.router, prefix=API_V1_STR)
+
+
+@app.on_event("startup")
+def ensure_local_sqlite_schema():
+    """Auto-create tables for local SQLite development only."""
+    if DATABASE_URL.startswith("sqlite"):
+        Base.metadata.create_all(bind=engine)
 
 
 @app.get("/")

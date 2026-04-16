@@ -38,43 +38,6 @@ const JSON_HEADERS: HeadersInit = {
   Accept: "application/json",
 };
 
-// ─── Auth token helpers ───────────────────────────────────────
-
-export function getToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem("bp_access_token");
-}
-
-export function setToken(token: string): void {
-  localStorage.setItem("bp_access_token", token);
-}
-
-export function clearToken(): void {
-  localStorage.removeItem("bp_access_token");
-  localStorage.removeItem("bp_workspace_id");
-  localStorage.removeItem("bp_workspace_name");
-  localStorage.removeItem("bp_role");
-  localStorage.removeItem("bp_email");
-  document.cookie = "bp_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
-}
-
-export function setSession(data: {
-  // sets localStorage + cookie for middleware
-  access_token: string;
-  workspace_id?: string | null;
-  workspace_name?: string | null;
-  role: string;
-  email: string;
-}): void {
-  localStorage.setItem("bp_access_token", data.access_token);
-  localStorage.setItem("bp_role", data.role);
-  localStorage.setItem("bp_email", data.email);
-  if (data.workspace_id) localStorage.setItem("bp_workspace_id", data.workspace_id);
-  if (data.workspace_name) localStorage.setItem("bp_workspace_name", data.workspace_name);
-}
-
-// ─── Core request helper ──────────────────────────────────────
-
 export type SessionInfoResponse = {
   role: WorkspaceRole;
   email: string;
@@ -104,6 +67,9 @@ export type CreateInviteResponse = {
   workspace_id: string;
   invited_email: string;
   expires_at: string;
+  invite_url?: string | null;
+  email_sent?: boolean;
+  delivery_message?: string | null;
 };
 
 export type BulkOrdersStatusPayload = {
@@ -216,6 +182,15 @@ function handleExpiredSession(message: string) {
   window.location.replace(signInUrl.toString());
 }
 
+function isExpiredTokenError(status: number, message: string): boolean {
+  if (!message.trim()) return false;
+
+  const mentionsJwtExpiry =
+    /invalid jwt|token is expired|jwt expired|invalid claims|unable to parse or verify signature/i.test(message);
+
+  return mentionsJwtExpiry && (status === 400 || status === 401 || status === 403);
+}
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const session = getActiveSession();
   const authHeaders: HeadersInit = session?.accessToken
@@ -254,9 +229,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
       detailMessage = payload;
     }
 
-    const isExpiredToken =
-      res.status === 401 &&
-      /invalid jwt|token is expired|jwt expired|invalid claims/i.test(detailMessage);
+    const isExpiredToken = isExpiredTokenError(res.status, detailMessage || bodyText);
 
     if (isExpiredToken) {
       handleExpiredSession("Your session expired. Please sign in again.");
@@ -289,6 +262,9 @@ async function requestText(url: string, init?: RequestInit): Promise<string> {
 
   const bodyText = await res.text().catch(() => "");
   if (!res.ok) {
+    if (isExpiredTokenError(res.status, bodyText)) {
+      handleExpiredSession("Your session expired. Please sign in again.");
+    }
     throw new Error(bodyText || `API ${res.status}`);
   }
   return bodyText;
@@ -421,112 +397,6 @@ function normalizePurchaseOrder(order: PurchaseOrder): PurchaseOrder {
   };
 }
 
-// ─── Auth ─────────────────────────────────────────────────────
-
-export const authApi = {
-  signIn: (email: string, password: string) =>
-    request<{
-      access_token: string;
-      token_type: string;
-      role: string;
-      email: string;
-      workspace_id: string | null;
-      workspace_name: string | null;
-    }>(`${BASE}/auth/signin`, {
-      method: "POST",
-      body: JSON.stringify({ email, password }),
-    }),
-
-  signUpCompany: (data: {
-    full_name: string;
-    company_name: string;
-    email: string;
-    password: string;
-  }) =>
-    request<{
-      access_token: string | null;
-      role: string;
-      email: string;
-      workspace_id: string;
-      workspace_name: string;
-      requires_email_confirmation: boolean;
-    }>(`${BASE}/auth/signup-company`, { method: "POST", body: JSON.stringify(data) }),
-
-  joinInvite: (data: {
-    invite_token: string;
-    full_name: string;
-    email: string;
-    password: string;
-  }) =>
-    request<{
-      access_token: string | null;
-      role: string;
-      email: string;
-      workspace_id: string;
-      workspace_name: string;
-      requires_email_confirmation: boolean;
-    }>(`${BASE}/auth/join-invite`, { method: "POST", body: JSON.stringify(data) }),
-
-  me: () => request<SessionInfoResponse>(`${BASE}/auth/me`, { headers: getAuthHeaders() }),
-  listWorkspaces: () => request<SessionWorkspaceSummary[]>(`${BASE}/auth/workspaces`, { headers: getAuthHeaders() }),
-  listAuditEvents: () => request<AuditLogEntry[]>(`${BASE}/auth/audit-log`, { headers: getAuthHeaders() }),
-  listMembers: () => request<WorkspaceMember[]>(`${BASE}/auth/members`, { headers: getAuthHeaders() }),
-  updateMember: (memberId: string, data: UpdateWorkspaceMemberPayload) =>
-    request<WorkspaceMember>(`${BASE}/auth/members/${encodeURIComponent(memberId)}`, {
-      method: "PATCH",
-      headers: getAuthHeaders(),
-      body: JSON.stringify(data),
-    }),
-  deleteMember: (memberId: string) =>
-    request<void>(`${BASE}/auth/members/${encodeURIComponent(memberId)}`, {
-      method: "DELETE",
-      headers: getAuthHeaders(),
-    }),
-  createInvite: (data: CreateInvitePayload) =>
-    request<CreateInviteResponse>(`${BASE}/auth/invites`, {
-      method: "POST",
-      headers: getAuthHeaders(),
-      body: JSON.stringify(data),
-    }),
-  listInvites: (includeExpired = false) =>
-    request<WorkspaceInviteSummary[]>(
-      `${BASE}/auth/invites?include_expired=${includeExpired ? "true" : "false"}`,
-      { headers: getAuthHeaders() },
-    ),
-  revokeInvite: (inviteId: string) =>
-    request<void>(`${BASE}/auth/invites/${encodeURIComponent(inviteId)}`, {
-      method: "DELETE",
-      headers: getAuthHeaders(),
-    }),
-  forgotPassword: (data: ForgotPasswordPayload) =>
-    request<{ message: string }>(`${BASE}/auth/forgot-password`, {
-      method: "POST",
-      body: JSON.stringify(data),
-    }),
-  verifyRecovery: (data: VerifyRecoveryPayload) =>
-    request<VerifyRecoveryResponse>(`${BASE}/auth/verify-recovery`, {
-      method: "POST",
-      body: JSON.stringify(data),
-    }),
-  resetPassword: (data: ResetPasswordPayload) =>
-    request<{ message: string }>(`${BASE}/auth/reset-password`, {
-      method: "POST",
-      body: JSON.stringify(data),
-    }),
-  updateWorkspaceProfile: (data: WorkspaceProfileUpdatePayload) =>
-    request<WorkspaceProfileResponse>(`${BASE}/auth/workspace`, {
-      method: "PATCH",
-      headers: getAuthHeaders(),
-      body: JSON.stringify(data),
-    }),
-  getWorkspaceBillingSummary: () =>
-    request<WorkspaceBillingSummaryResponse>(`${BASE}/auth/workspace/billing-summary`, {
-      headers: getAuthHeaders(),
-    }),
-};
-
-// ─── Materials ────────────────────────────────────────────────
-
 export const materialsApi = {
   list: async () => (await request<Material[]>(`${BASE}/materials`)).map(normalizeMaterial),
   get: async (id: string) => normalizeMaterial(await request<Material>(`${BASE}/materials/${id}`)),
@@ -556,6 +426,7 @@ export const materialsApi = {
     if (name && name.trim()) {
       formData.append("name", name.trim());
     }
+
     return normalizeMaterialAttachment(
       await requestForm<MaterialAttachment>(`${BASE}/materials/${id}/attachments/upload`, formData, "POST")
     );
@@ -566,17 +437,6 @@ export const materialsApi = {
     return requestForm<MaterialCsvImportSummary>(`${BASE}/materials/import/csv`, formData, "POST");
   },
 };
-
-// ─── Projects ─────────────────────────────────────────────────
-
-export interface ProjectSummary {
-  project_id: string;
-  item_count: number;
-  subtotal: number;
-  tax_pct: number;
-  tax_amount: number;
-  grand_total: number;
-}
 
 export const projectsApi = {
   list: async () => (await request<Project[]>(`${BASE}/projects`)).map(normalizeProject),
@@ -601,22 +461,6 @@ export const projectsApi = {
   delete: (id: string) =>
     request<void>(`${BASE}/projects/${id}`, { method: "DELETE" }),
 };
-
-// ─── Project items ─────────────────────────────────────────────
-
-export interface LineItemResponse {
-  id: string;
-  project_id: string;
-  material_id: string;
-  material_name: string;
-  unit_type: string;
-  unit_cost: number;
-  quantity: number;
-  waste_pct: number;
-  total_qty: number;
-  line_subtotal: number;
-  created_at: string;
-}
 
 export const projectItemsApi = {
   list: async (projectId: string) =>
@@ -646,6 +490,8 @@ export const projectItemsApi = {
 };
 
 export const ordersApi = {
+  list: async () =>
+    (await request<ProjectItem[]>(`${BASE}/orders`)).map(normalizeProjectItem),
   listPurchaseOrders: async (params?: { vendor_id?: string; status?: "draft" | "ordered" | "received" | "cancelled" }) => {
     const query = new URLSearchParams();
     if (params?.vendor_id) query.set("vendor_id", params.vendor_id);
@@ -681,45 +527,171 @@ export const ordersApi = {
     ),
 };
 
-// ─── Customers ────────────────────────────────────────────────
+export const vendorsApi = {
+  list: () => request<Vendor[]>(`${BASE}/vendors`),
+  get: (id: string) => request<Vendor>(`${BASE}/vendors/${id}`),
+  create: (data: VendorCreate) =>
+    request<Vendor>(`${BASE}/vendors`, { method: "POST", body: JSON.stringify(data) }),
+  update: (id: string, data: Partial<VendorCreate>) =>
+    request<Vendor>(`${BASE}/vendors/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  delete: (id: string) =>
+    request<void>(`${BASE}/vendors/${id}`, { method: "DELETE" }),
+};
 
 export const customersApi = {
   list: () => request<Customer[]>(`${BASE}/customers`),
   get: (id: string) => request<Customer>(`${BASE}/customers/${id}`),
   create: (data: CustomerCreate) =>
-    request<Customer>(`${BASE}/customers`, {
-      method: "POST",
-      body: JSON.stringify(data),
-    }),
+    request<Customer>(`${BASE}/customers`, { method: "POST", body: JSON.stringify(data) }),
   update: (id: string, data: Partial<CustomerCreate>) =>
-    request<Customer>(`${BASE}/customers/${id}`, {
-      method: "PUT",
-      body: JSON.stringify(data),
-    }),
+    request<Customer>(`${BASE}/customers/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   delete: (id: string) =>
     request<void>(`${BASE}/customers/${id}`, { method: "DELETE" }),
 };
 
-// ─── Vendors ──────────────────────────────────────────────────
-
-export const vendorsApi = {
-  list: () => request<Vendor[]>(`${BASE}/vendors`),
-  get: (id: string) => request<Vendor>(`${BASE}/vendors/${id}`),
-  create: (data: VendorCreate) =>
-    request<Vendor>(`${BASE}/vendors`, {
+export const authApi = {
+  me: () => request<SessionInfoResponse>(`${BASE}/auth/me`, { headers: getAuthHeaders() }),
+  listWorkspaces: () => request<SessionWorkspaceSummary[]>(`${BASE}/auth/workspaces`, { headers: getAuthHeaders() }),
+  listAuditEvents: () => request<AuditLogEntry[]>(`${BASE}/auth/audit-log`, { headers: getAuthHeaders() }),
+  listMembers: () => request<WorkspaceMember[]>(`${BASE}/auth/members`, { headers: getAuthHeaders() }),
+  updateMember: (memberId: string, data: UpdateWorkspaceMemberPayload) =>
+    request<WorkspaceMember>(`${BASE}/auth/members/${encodeURIComponent(memberId)}`, {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data),
+    }),
+  deleteMember: (memberId: string) =>
+    request<void>(`${BASE}/auth/members/${encodeURIComponent(memberId)}`, {
+      method: "DELETE",
+      headers: getAuthHeaders(),
+    }),
+  createInvite: (data: CreateInvitePayload) =>
+    request<CreateInviteResponse>(`${BASE}/auth/invites`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data),
+    }),
+  listInvites: (includeExpired = false) =>
+    request<WorkspaceInviteSummary[]>(
+      `${BASE}/auth/invites?include_expired=${includeExpired ? "true" : "false"}`,
+      { headers: getAuthHeaders() },
+    ),
+  resendInvite: (inviteId: string) =>
+    request<CreateInviteResponse>(`${BASE}/auth/invites/${encodeURIComponent(inviteId)}/resend`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+    }),
+  revokeInvite: (inviteId: string) =>
+    request<void>(`${BASE}/auth/invites/${encodeURIComponent(inviteId)}`, {
+      method: "DELETE",
+      headers: getAuthHeaders(),
+    }),
+  forgotPassword: (data: ForgotPasswordPayload) =>
+    request<{ message: string }>(`${BASE}/auth/forgot-password`, {
       method: "POST",
       body: JSON.stringify(data),
     }),
-  update: (id: string, data: Partial<VendorCreate>) =>
-    request<Vendor>(`${BASE}/vendors/${id}`, {
-      method: "PUT",
+  verifyRecovery: (data: VerifyRecoveryPayload) =>
+    request<VerifyRecoveryResponse>(`${BASE}/auth/verify-recovery`, {
+      method: "POST",
       body: JSON.stringify(data),
     }),
-  delete: (id: string) =>
-    request<void>(`${BASE}/vendors/${id}`, { method: "DELETE" }),
+  resetPassword: (data: ResetPasswordPayload) =>
+    request<{ message: string }>(`${BASE}/auth/reset-password`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  updateWorkspaceProfile: (data: WorkspaceProfileUpdatePayload) =>
+    request<WorkspaceProfileResponse>(`${BASE}/auth/workspace`, {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data),
+    }),
+  getWorkspaceBillingSummary: () =>
+    request<WorkspaceBillingSummaryResponse>(`${BASE}/auth/workspace/billing-summary`, {
+      headers: getAuthHeaders(),
+    }),
 };
 
-// ─── Search ───────────────────────────────────────────────────
+// ── Report types ─────────────────────────────────────────────────────────────
+
+export type MaterialUsageRow = {
+  material_id: string;
+  material_name: string;
+  category: string | null;
+  unit_type: string;
+  total_quantity: number;
+  total_cost: number;
+  project_count: number;
+};
+
+export type MaterialUsageReport = {
+  rows: MaterialUsageRow[];
+  total_cost: number;
+  total_items_counted: number;
+};
+
+export type VendorSpendingRow = {
+  vendor_id: string | null;
+  vendor_name: string;
+  material_count: number;
+  line_item_count: number;
+  total_cost: number;
+};
+
+export type VendorSpendingReport = {
+  rows: VendorSpendingRow[];
+  grand_total: number;
+};
+
+export type ProjectBudgetRow = {
+  project_id: string;
+  project_name: string;
+  customer_name: string;
+  status: string;
+  item_count: number;
+  cost_subtotal: number;
+  tax_pct: number;
+  tax_amount: number;
+  grand_total: number;
+};
+
+export type ProjectBudgetReport = {
+  rows: ProjectBudgetRow[];
+  total_projects: number;
+  combined_subtotal: number;
+  combined_tax: number;
+  combined_grand_total: number;
+};
+
+export const reportsApi = {
+  materialUsage: (params?: { project_status?: string; category?: string; limit?: number }) => {
+    const query = new URLSearchParams();
+    if (params?.project_status) query.set("project_status", params.project_status);
+    if (params?.category) query.set("category", params.category);
+    if (typeof params?.limit === "number") query.set("limit", String(params.limit));
+    const qs = query.toString();
+    return request<MaterialUsageReport>(`${BASE}/reports/material-usage${qs ? `?${qs}` : ""}`, {
+      headers: getAuthHeaders(),
+    });
+  },
+  vendorSpending: (params?: { project_status?: string }) => {
+    const query = new URLSearchParams();
+    if (params?.project_status) query.set("project_status", params.project_status);
+    const qs = query.toString();
+    return request<VendorSpendingReport>(`${BASE}/reports/vendor-spending${qs ? `?${qs}` : ""}`, {
+      headers: getAuthHeaders(),
+    });
+  },
+  projectBudget: (params?: { status?: string }) => {
+    const query = new URLSearchParams();
+    if (params?.status) query.set("status", params.status);
+    const qs = query.toString();
+    return request<ProjectBudgetReport>(`${BASE}/reports/project-budget${qs ? `?${qs}` : ""}`, {
+      headers: getAuthHeaders(),
+    });
+  },
+};
 
 export const searchApi = {
   run: async (params: SearchParams) => {

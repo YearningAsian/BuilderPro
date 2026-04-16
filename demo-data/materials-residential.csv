@@ -1,0 +1,316 @@
+name,category,unit_type,unit_cost,sku,default_waste_pct,is_taxable,notes,default_vendor_name
+Ready-Mix Concrete (3000 PSI),Concrete & Masonry,CY,160.00,CMU-RMIX3000,5,true,Standard 3000 PSI mix. Order 24hr in advance.,Southwest Concrete Supply
+Ready-Mix Concrete (4000 PSI),Concrete & Masonry,CY,175.00,CMU-RMIX4000,5,true,High-strength 4000 PSI for footings and slabs.,Southwest Concrete Supply
+Concrete Block (CMU 8x8x16),Concrete & Masonry,EA,2.85,CMU-8816,5,true,Standard 8-inch CMU block.,Southwest Concrete Supply
+Concrete Block (CMU 4x8x16),Concrete & Masonry,EA,1.95,CMU-4816,5,true,Half-width CMU for partition and veneer work.,Southwest Concrete Supply
+Standard Brick (Modular),Concrete & Masonry,EA,0.85,BRK-MOD,5,true,Standard modular face brick. ~500 per pallet.,Southwest Concrete Supply
+Mortar Mix Type S (60 lb),Concrete & Masonry,BAG,8.50,MOR-S-60LB,10,true,Type S mortar for masonry and stucco base.,Southwest Concrete Supply
+Mortar Mix Type N (60 lb),Concrete & Masonry,BAG,7.50,MOR-N-60LB,10,true,Type N mortar for above-grade interior masonry.,Southwest Concrete Supply
+Rebar #4 (1/2") 20-ft,Concrete & Masonry,EA,12.00,RBR-4-20,5,true,#4 deformed rebar 20-ft stick.,Southwest Concrete Supply
+Rebar #5 (5/8") 20-ft,Concrete & Masonry,EA,18.50,RBR-5-20,5,true,#5 deformed rebar 20-ft stick.,Southwest Concrete Supply
+Wire Mesh 6x6 W1.4 (150 SF/roll),Concrete & Masonry,RL,85.00,WMH-614,5,true,Welded wire reinforcement for slabs.,Southwest Concrete Supply
+Fiber Cement Board (1/2" 4x8),Concrete & Masonry,SH,24.00,FCB-412,10,true,Cement board for tile substrate and exterior use.,Southwest Concrete Supply
+2x4x8 SPF Stud,Framing Lumber,EA,4.50,LUM-2X4X8,12,true,Standard 2x4x8 spruce-pine-fir stud.,Regional Lumber Co.
+2x4x92-5/8" Precut Stud,Framing Lumber,EA,4.25,LUM-2X4PC,12,true,Precut stud for standard 8-ft wall framing.,Regional Lumber Co.
+2x6x8 SPF,Framing Lumber,EA,7.50,LUM-2X6X8,12,true,2x6x8 for exterior walls and headers.,Regional Lumber Co.
+2x6x12 SPF,Framing Lumber,EA,11.00,LUM-2X6X12,12,true,2x6x12 general framing lumber.,Regional Lumber Co.
+2x6x16 SPF,Framing Lumber,EA,14.50,LUM-2X6X16,12,true,2x6x16 for long spans and rafters.,Regional Lumber Co.
+2x8x16 SPF,Framing Lumber,EA,18.00,LUM-2X8X16,12,true,2x8x16 floor joist and beam stock.,Regional Lumber Co.
+2x10x16 SPF,Framing Lumber,EA,26.00,LUM-2X10X16,12,true,2x10x16 for floor joists and ridge beams.,Regional Lumber Co.
+2x12x16 SPF,Framing Lumber,EA,34.00,LUM-2X12X16,12,true,2x12x16 for stair stringers and heavy beams.,Regional Lumber Co.
+4x4x8 Post (Pressure Treated),Framing Lumber,EA,14.00,LUM-4X4X8PT,5,true,Pressure-treated 4x4 post.,Regional Lumber Co.
+6x6x8 Post (Pressure Treated),Framing Lumber,EA,32.00,LUM-6X6X8PT,5,true,Pressure-treated 6x6 post for decks and headers.,Regional Lumber Co.
+Pressure Treated 2x6x12,Framing Lumber,EA,14.50,LUM-PT2X6X12,10,true,PT 2x6 for sill plates and decking.,Regional Lumber Co.
+Pressure Treated 2x8x16,Framing Lumber,EA,22.00,LUM-PT2X8X16,10,true,PT 2x8 for ledger boards and deck framing.,Regional Lumber Co.
+LVL Beam 3.5"x9.5",Framing Lumber,LF,14.00,LVL-359,5,true,Laminated veneer lumber for headers and beams.,Regional Lumber Co.
+LVL Beam 3.5"x11.25",Framing Lumber,LF,18.00,LVL-35112,5,true,LVL beam for wide openings and long spans.,Regional Lumber Co.
+LVL Beam 3.5"x14",Framing Lumber,LF,24.00,LVL-3514,5,true,Heavy LVL for garage openings and ridge beams.,Regional Lumber Co.
+OSB Sheathing 7/16" 4x8,Structural Panels,SH,18.00,OSB-716-48,10,true,Standard wall and roof sheathing.,Regional Lumber Co.
+OSB Sheathing 1/2" 4x8,Structural Panels,SH,22.00,OSB-12-48,10,true,Structural wall sheathing for high-wind zones.,Regional Lumber Co.
+Plywood 1/2" 4x8 CDX,Structural Panels,SH,38.00,PLY-12CDX,10,true,CDX plywood for sheathing and underlayment.,Regional Lumber Co.
+Plywood 3/4" 4x8 CDX,Structural Panels,SH,52.00,PLY-34CDX,10,true,CDX plywood for sheathing and form work.,Regional Lumber Co.
+Plywood 3/4" 4x8 T&G Subfloor,Structural Panels,SH,55.00,PLY-34TG,10,true,Tongue-and-groove subfloor plywood.,Regional Lumber Co.
+LP SmartSide 7/16" 4x8,Structural Panels,SH,42.00,SID-SMART-48,10,true,Engineered wood siding panel.,Regional Lumber Co.
+Architectural Shingles 30-yr,Roofing,SQ,110.00,RF-ARCH30,10,true,30-year architectural asphalt shingles. 1 SQ = 100 SF.,Roofing Direct
+3-Tab Asphalt Shingles,Roofing,SQ,80.00,RF-3TAB,10,true,Standard 3-tab shingles. 1 SQ = 100 SF.,Roofing Direct
+Roofing Felt #15 (4-sq roll),Roofing,RL,28.00,RF-FELT15,5,true,15-lb felt underlayment.,Roofing Direct
+Ice & Water Shield (2-sq roll),Roofing,RL,95.00,RF-IWS2,5,true,Peel-and-stick ice and water barrier for eaves and valleys.,Roofing Direct
+Ridge Cap Shingles,Roofing,BDL,45.00,RF-RIDGE,5,true,Pre-cut ridge cap bundle.,Roofing Direct
+Drip Edge Aluminum 10-ft,Roofing,EA,4.50,RF-DRIP10,5,true,Aluminum drip edge. Standard colors available.,Roofing Direct
+Roofing Coil Nails 1-3/4" (7200/box),Roofing,BX,42.00,RF-NAIL174,5,true,Coil nails for pneumatic roofing nailer.,Roofing Direct
+Pipe Flashing Boot 1"-3",Roofing,EA,12.00,RF-FLASH3,5,true,Lead-free pipe flashing boot for penetrations.,Roofing Direct
+Step Flashing 5"x7" (25/bundle),Roofing,BDL,28.00,RF-STEP25,5,true,Galvanized step flashing for wall intersections.,Roofing Direct
+Fiberglass Batt R-13 3.5" 15-in,Insulation,SF,0.45,INS-R13-15,5,true,R-13 kraft-faced batt for 2x4 exterior walls.,Interior Supply Group
+Fiberglass Batt R-13 3.5" 23-in,Insulation,SF,0.48,INS-R13-23,5,true,R-13 wide kraft-faced batt for 2x4 framing.,Interior Supply Group
+Fiberglass Batt R-19 6" 15-in,Insulation,SF,0.65,INS-R19-15,5,true,R-19 kraft-faced batt for 2x6 exterior walls.,Interior Supply Group
+Fiberglass Batt R-19 6" 23-in,Insulation,SF,0.68,INS-R19-23,5,true,R-19 wide batt for 2x6 framing.,Interior Supply Group
+Fiberglass Batt R-30 9.5-in,Insulation,SF,0.95,INS-R30,5,true,R-30 batt for attic floors and cathedral ceilings.,Interior Supply Group
+Rigid Foam R-5 1" 4x8,Insulation,SH,22.00,INS-RF1-48,5,true,1-inch EPS rigid foam board.,Interior Supply Group
+Rigid Foam R-10 2" 4x8,Insulation,SH,38.00,INS-RF2-48,5,true,2-inch EPS rigid foam board.,Interior Supply Group
+House Wrap Tyvek 9x100-ft,Insulation,RL,110.00,INS-HW9100,5,true,Weather-resistant barrier. 900 SF per roll.,Interior Supply Group
+Spray Foam 2-Part Kit 200 BF,Insulation,KT,85.00,INS-SPF200,10,true,Closed-cell spray foam for gaps and rim joists.,Interior Supply Group
+Drywall 1/2" 4x8,Drywall & Plaster,SH,12.00,DW-12-48,10,true,Standard 1/2-inch drywall.,Interior Supply Group
+Drywall 1/2" 4x12,Drywall & Plaster,SH,18.00,DW-12-412,10,true,Long 4x12 drywall for reduced seams.,Interior Supply Group
+Drywall 5/8" Type X 4x8,Drywall & Plaster,SH,15.00,DW-58X-48,10,true,Fire-code drywall for garages and party walls.,Interior Supply Group
+Drywall 1/2" Moisture-Resistant 4x8,Drywall & Plaster,SH,16.50,DW-12MR-48,10,true,Green board for bathrooms and wet areas.,Interior Supply Group
+Joint Compound All-Purpose 5-Gal,Drywall & Plaster,BKT,18.00,DW-JC5G,15,true,All-purpose joint compound for taping and finishing.,Interior Supply Group
+Paper Joint Tape 250-ft,Drywall & Plaster,RL,6.50,DW-TAPE250,5,true,Standard paper drywall tape.,Interior Supply Group
+Metal Corner Bead 1-1/4" 8-ft,Drywall & Plaster,EA,1.85,DW-CB8,5,true,Standard bullnose metal corner bead.,Interior Supply Group
+Drywall Screws 1-5/8" (1 lb),Drywall & Plaster,LB,4.50,DW-SCRW158,5,true,Coarse-thread drywall screws for wood framing.,Interior Supply Group
+Drywall Screws 2-5/8" (1 lb),Drywall & Plaster,LB,4.75,DW-SCRW258,5,true,Longer drywall screws for double-layer and thick framing.,Interior Supply Group
+Drywall Screws 3" (1 lb),Drywall & Plaster,LB,5.00,DW-SCRW3,5,true,3-inch screws for attaching to metal and thick assemblies.,Interior Supply Group
+Hardwood Flooring 3/4" Oak,Flooring,SF,5.50,FL-OAK34,12,true,3/4" solid oak strip flooring. Unfinished.,Interior Supply Group
+LVP Flooring 6mm,Flooring,SF,2.85,FL-LVP6,10,true,6mm luxury vinyl plank. 100% waterproof.,Interior Supply Group
+LVP Flooring 12mm,Flooring,SF,4.25,FL-LVP12,10,true,12mm luxury vinyl plank. Click-lock install.,Interior Supply Group
+Ceramic Tile 12x12,Flooring,SF,2.50,FL-CER12,12,true,Standard 12x12 ceramic floor tile.,Interior Supply Group
+Porcelain Tile 24x24,Flooring,SF,4.80,FL-POR24,12,true,Large-format porcelain tile.,Interior Supply Group
+Carpet (Standard Grade),Flooring,SF,1.85,FL-CARP-STD,12,true,Standard residential carpet.,Interior Supply Group
+Carpet Pad 1/2",Flooring,SF,0.65,FL-PAD12,5,true,8 lb density 1/2-inch carpet pad.,Interior Supply Group
+Cement Board 1/2" 3x5,Flooring,SH,14.00,FL-CB-35,10,true,HardieBacker cement board for tile substrate.,Interior Supply Group
+Tile Thinset Mortar (50 lb),Flooring,BAG,18.00,FL-THIN50,10,true,Polymer-modified thinset mortar.,Interior Supply Group
+Tile Grout Unsanded (10 lb),Flooring,BAG,12.00,FL-GROUT10,10,true,Unsanded grout for joints up to 1/8-inch.,Interior Supply Group
+Hardwood Transition Strip 78-in,Flooring,EA,22.00,FL-TRANS78,5,true,T-molding transition strip for floor changes.,Interior Supply Group
+PVC Pipe 4" DWV 10-ft,Plumbing,EA,18.00,PLM-PVC4-10,10,true,Schedule 40 PVC drain-waste-vent pipe.,Plumbing Pro Distributors
+PVC Pipe 3" DWV 10-ft,Plumbing,EA,12.00,PLM-PVC3-10,10,true,Schedule 40 PVC DWV pipe.,Plumbing Pro Distributors
+PVC Pipe 2" DWV 10-ft,Plumbing,EA,8.50,PLM-PVC2-10,10,true,Schedule 40 PVC DWV pipe.,Plumbing Pro Distributors
+Copper Pipe 1/2" Type M 10-ft,Plumbing,EA,28.00,PLM-COP12-10,10,true,Type M copper water supply pipe.,Plumbing Pro Distributors
+Copper Pipe 3/4" Type M 10-ft,Plumbing,EA,42.00,PLM-COP34-10,10,true,Type M copper water supply pipe.,Plumbing Pro Distributors
+PEX Pipe 1/2" (per foot),Plumbing,LF,0.55,PLM-PEX12,10,true,1/2-inch red/blue PEX tubing. Sold per foot.,Plumbing Pro Distributors
+PEX Pipe 3/4" (per foot),Plumbing,LF,0.85,PLM-PEX34,10,true,3/4-inch PEX tubing. Sold per foot.,Plumbing Pro Distributors
+PVC 4" 90-Degree Elbow,Plumbing,EA,4.50,PLM-ELB4-90,5,true,Schedule 40 PVC sanitary elbow.,Plumbing Pro Distributors
+PVC 3" 90-Degree Elbow,Plumbing,EA,3.25,PLM-ELB3-90,5,true,Schedule 40 PVC sanitary elbow.,Plumbing Pro Distributors
+PVC 2" 90-Degree Elbow,Plumbing,EA,2.50,PLM-ELB2-90,5,true,Schedule 40 PVC elbow.,Plumbing Pro Distributors
+Ball Valve 1/2" Brass,Plumbing,EA,12.00,PLM-BV12,5,true,Full-port brass ball valve.,Plumbing Pro Distributors
+Ball Valve 3/4" Brass,Plumbing,EA,16.00,PLM-BV34,5,true,Full-port brass ball valve.,Plumbing Pro Distributors
+P-Trap 1.5" PVC,Plumbing,EA,6.50,PLM-PT15,5,true,PVC P-trap for lavatory and kitchen drains.,Plumbing Pro Distributors
+Toilet Wax Ring with Bolts,Plumbing,EA,8.00,PLM-WAX,5,true,Standard wax ring with closet bolts.,Plumbing Pro Distributors
+Shut-Off Valve 1/2" Angle,Plumbing,EA,8.50,PLM-SOV12,5,true,Chrome angle stop valve for fixtures.,Plumbing Pro Distributors
+Water Heater 50-Gal Electric,Plumbing,EA,650.00,PLM-WH50E,0,true,50-gallon electric water heater.,Plumbing Pro Distributors
+14/2 NM-B Wire (per foot),Electrical,FT,0.65,ELC-1422,10,true,14-2 Romex with ground for 15A circuits.,National Electrical Wholesale
+12/2 NM-B Wire (per foot),Electrical,FT,0.95,ELC-1222,10,true,12-2 Romex with ground for 20A circuits.,National Electrical Wholesale
+10/2 NM-B Wire (per foot),Electrical,FT,1.45,ELC-1022,10,true,10-2 Romex for dryers and water heaters.,National Electrical Wholesale
+14/3 NM-B Wire (per foot),Electrical,FT,0.95,ELC-1423,10,true,14-3 Romex for 3-way switches and split circuits.,National Electrical Wholesale
+12/3 NM-B Wire (per foot),Electrical,FT,1.35,ELC-1223,10,true,12-3 Romex for multi-wire branch circuits.,National Electrical Wholesale
+Plastic Single Gang Box,Electrical,EA,1.25,ELC-BOX1G,5,true,Single gang plastic old/new work box.,National Electrical Wholesale
+Plastic Double Gang Box,Electrical,EA,1.85,ELC-BOX2G,5,true,Double gang plastic box.,National Electrical Wholesale
+Metal Box 4" Square,Electrical,EA,3.50,ELC-BOX4S,5,true,4-inch steel square box with knockouts.,National Electrical Wholesale
+Duplex Outlet 15A,Electrical,EA,2.50,ELC-OUTL15,5,true,Standard 15A duplex receptacle.,National Electrical Wholesale
+Duplex Outlet 20A,Electrical,EA,4.50,ELC-OUTL20,5,true,20A T-slot duplex receptacle.,National Electrical Wholesale
+Single Pole Switch,Electrical,EA,3.00,ELC-SW1P,5,true,15A single pole toggle switch.,National Electrical Wholesale
+3-Way Switch,Electrical,EA,6.50,ELC-SW3W,5,true,15A 3-way toggle switch.,National Electrical Wholesale
+GFCI Outlet 20A,Electrical,EA,18.00,ELC-GFCI20,5,true,20A GFCI outlet with LED indicator.,National Electrical Wholesale
+AFCI Breaker 15A,Electrical,EA,42.00,ELC-AFCI15,5,true,15A AFCI/GFCI combo circuit breaker.,National Electrical Wholesale
+AFCI Breaker 20A,Electrical,EA,48.00,ELC-AFCI20,5,true,20A AFCI/GFCI combo circuit breaker.,National Electrical Wholesale
+200A Main Breaker Panel,Electrical,EA,185.00,ELC-PNL200,0,true,200A load center with main breaker.,National Electrical Wholesale
+LED Recessed Light 6",Electrical,EA,18.00,ELC-REC6,5,true,6-inch LED retrofit recessed light.,National Electrical Wholesale
+Smoke Detector (AC Hardwired),Electrical,EA,28.00,ELC-SMK-AC,5,true,120V hardwired smoke detector with battery backup.,National Electrical Wholesale
+Carbon Monoxide Detector,Electrical,EA,32.00,ELC-CO,5,true,Hardwired CO detector with battery backup.,National Electrical Wholesale
+16d Sinker Nails (1 lb),Hardware & Fasteners,LB,3.75,HW-N16D-SNK,5,true,Hand-drive sinker nails for general framing.,Pro Hardware Supply
+16d Common Nails (1 lb),Hardware & Fasteners,LB,4.00,HW-N16D-CMN,5,true,16d common nails for heavy structural work.,Pro Hardware Supply
+10d Common Nails (1 lb),Hardware & Fasteners,LB,3.50,HW-N10D-CMN,5,true,10d common nails for general carpentry.,Pro Hardware Supply
+8d Common Nails (1 lb),Hardware & Fasteners,LB,3.25,HW-N8D-CMN,5,true,8d common nails for sheathing and general use.,Pro Hardware Supply
+8d Box Nails (1 lb),Hardware & Fasteners,LB,3.00,HW-N8D-BOX,5,true,8d box nails for lighter framing and trim.,Pro Hardware Supply
+6d Box Nails (1 lb),Hardware & Fasteners,LB,2.75,HW-N6D-BOX,5,true,6d box nails for furring and light trim.,Pro Hardware Supply
+Joist Hanger Nails 1-1/2" (1 lb),Hardware & Fasteners,LB,4.50,HW-NJH15,5,true,Short stout nails specifically for metal connectors and joist hangers.,Pro Hardware Supply
+Duplex Form Nails 16d (1 lb),Hardware & Fasteners,LB,3.75,HW-NDPX16,5,true,Double-head nails for concrete formwork. Easy removal.,Southwest Concrete Supply
+Galvanized Ring Shank Siding Nails 8d (1 lb),Hardware & Fasteners,LB,5.50,HW-NGSID8D,5,true,Galvanized ring shank for hardboard and fiber cement siding.,Pro Hardware Supply
+Framing Nails 3-1/2" Coil (300/box),Hardware & Fasteners,BX,14.50,HW-FN35,5,true,Full-round-head coil nails for framing nailer.,Pro Hardware Supply
+Framing Nails 3" Coil (300/box),Hardware & Fasteners,BX,12.00,HW-FN3,5,true,3-inch coil nails for framing and sheathing.,Pro Hardware Supply
+Roofing Nails 1-3/4" Smooth (1 lb),Hardware & Fasteners,LB,3.50,HW-NRF174,5,true,Hot-dipped galvanized hand-drive roofing nails.,Pro Hardware Supply
+Brad Nails 18ga 1-1/4" (1000/box),Hardware & Fasteners,BX,12.00,HW-NBR18-114,5,true,18ga brad nails for light trim and cabinet work.,Pro Hardware Supply
+Brad Nails 18ga 2" (1000/box),Hardware & Fasteners,BX,14.00,HW-NBR18-2,5,true,18ga brad nails for trim attachment.,Pro Hardware Supply
+Finish Nails 16ga 2" (1000/box),Hardware & Fasteners,BX,16.00,HW-NFN16-2,5,true,16ga finish nails for interior trim and casing.,Pro Hardware Supply
+Finish Nails 16ga 2-1/2" (1000/box),Hardware & Fasteners,BX,18.00,HW-NFN16-25,5,true,16ga finish nails for baseboard and heavy trim.,Pro Hardware Supply
+Finish Nails 15ga 2-1/2" (1000/box),Hardware & Fasteners,BX,20.00,HW-NFN15-25,5,true,15ga angled finish nails for thick trim and door casing.,Pro Hardware Supply
+Deck Screws 3" (1 lb),Hardware & Fasteners,LB,5.50,HW-DS3,5,true,Exterior-grade coated deck screws.,Pro Hardware Supply
+Deck Screws 2-1/2" (1 lb),Hardware & Fasteners,LB,5.25,HW-DS25,5,true,Exterior-grade coated deck screws for decking.,Pro Hardware Supply
+Pocket Screws 1-1/4" Coarse (100/box),Hardware & Fasteners,BX,8.00,HW-PKT114,5,true,Coarse-thread pocket screws for Kreg jig joints.,Pro Hardware Supply
+Pocket Screws 2-1/2" Coarse (100/box),Hardware & Fasteners,BX,10.00,HW-PKT25,5,true,Coarse-thread pocket screws for thicker material joints.,Pro Hardware Supply
+Self-Drilling Metal Screws #8x1/2" (100/box),Hardware & Fasteners,BX,6.50,HW-SDMS8-12,5,true,Self-drilling screws for metal stud framing.,Interior Supply Group
+Structural Screw LedgerLOK 3/8"x3-1/8" (50/box),Hardware & Fasteners,BX,28.00,HW-LEDLOK,5,true,FastenMaster LedgerLOK structural screws for ledger boards.,Pro Hardware Supply
+TimberLOK Structural Screw 3/8"x8" (50/box),Hardware & Fasteners,BX,32.00,HW-TIMLOK8,5,true,Heavy-duty TimberLOK for timber connections.,Pro Hardware Supply
+Tapcon Concrete Screws 3/16"x1-3/4" (75/box),Hardware & Fasteners,BX,18.00,HW-TAP316-175,5,true,Hex-head Tapcon for concrete and masonry.,Pro Hardware Supply
+Tapcon Concrete Screws 1/4"x2-3/4" (50/box),Hardware & Fasteners,BX,22.00,HW-TAP14-275,5,true,Larger Tapcon for sill plate and ledger anchoring.,Pro Hardware Supply
+GRK RSS Framing Screw 3-1/8" (100/box),Hardware & Fasteners,BX,22.00,HW-GRK318,5,true,GRK structural screws for framing connections.,Pro Hardware Supply
+Trim Head Screws 2-1/2" (1 lb),Hardware & Fasteners,LB,6.50,HW-TRM25,5,true,Small head trim screws for finished carpentry.,Pro Hardware Supply
+Lag Screw 1/2"x3" (25-pack),Hardware & Fasteners,PK,8.50,HW-LAG12X3,5,true,Hot-dip galvanized hex lag screws.,Pro Hardware Supply
+Lag Screw 1/2"x5" (25-pack),Hardware & Fasteners,PK,11.00,HW-LAG12X5,5,true,Longer lags for beam-to-post connections.,Pro Hardware Supply
+Wedge Anchor 1/2"x3-3/4" (25/box),Hardware & Fasteners,BX,22.00,HW-WA12-375,5,true,Stainless wedge anchors for concrete.,Pro Hardware Supply
+Sleeve Anchor 3/8"x3" (10/box),Hardware & Fasteners,BX,14.00,HW-SA38-3,5,true,Zinc sleeve anchors for masonry and concrete.,Pro Hardware Supply
+Toggle Bolt 1/4"x3" (10/box),Hardware & Fasteners,BX,8.00,HW-TGB14-3,5,true,Spring wing toggle bolts for hollow wall anchoring.,Pro Hardware Supply
+Snap Toggle 1/4" (10/box),Hardware & Fasteners,BX,12.00,HW-SNPTG14,5,true,SnapToggle channel anchors for drywall and block.,Pro Hardware Supply
+Joist Hanger LUS24,Hardware & Fasteners,EA,1.85,HW-LUS24,5,true,Simpson Strong-Tie LUS24 double joist hanger.,Pro Hardware Supply
+Joist Hanger LUS26,Hardware & Fasteners,EA,2.25,HW-LUS26,5,true,Simpson Strong-Tie LUS26 double joist hanger.,Pro Hardware Supply
+Hurricane Tie H2.5A,Hardware & Fasteners,EA,0.95,HW-H25A,5,true,Simpson H2.5A rafter tie for uplift resistance.,Pro Hardware Supply
+Strap Tie CMST16,Hardware & Fasteners,EA,3.50,HW-CMST16,5,true,Simpson CMST16 coil strap for lateral loads.,Pro Hardware Supply
+Post Cap BC6 (6x6),Hardware & Fasteners,EA,18.50,HW-BC6,5,true,Simpson BC6 post cap for 6x6 posts.,Pro Hardware Supply
+Post Base ABA44 (4x4),Hardware & Fasteners,EA,12.00,HW-ABA44,5,true,Simpson ABA44 adjustable post base for 4x4.,Pro Hardware Supply
+Post Base ABA66 (6x6),Hardware & Fasteners,EA,18.00,HW-ABA66,5,true,Simpson ABA66 adjustable post base for 6x6.,Pro Hardware Supply
+Angle Bracket A34,Hardware & Fasteners,EA,0.85,HW-A34,5,true,Simpson A34 framing angle bracket.,Pro Hardware Supply
+Construction Adhesive (10 oz),Hardware & Fasteners,TU,5.50,HW-CA10,5,true,Polyurethane construction adhesive.,Pro Hardware Supply
+Structural Adhesive PL Premium (10 oz),Hardware & Fasteners,TU,8.50,HW-PL400,5,true,Loctite PL Premium for subfloor and framing.,Pro Hardware Supply
+Circular Saw Blade 7-1/4" 24T Framing,Saw Blades & Consumables,EA,12.00,BLD-CS724T,0,true,Carbide-tipped framing blade. Fast aggressive cuts in lumber.,Pro Hardware Supply
+Circular Saw Blade 7-1/4" 40T General,Saw Blades & Consumables,EA,18.00,BLD-CS740T,0,true,40-tooth general purpose blade for dimensional lumber.,Pro Hardware Supply
+Circular Saw Blade 7-1/4" 60T Fine Finish,Saw Blades & Consumables,EA,24.00,BLD-CS760T,0,true,60-tooth fine finish blade for trim and plywood.,Pro Hardware Supply
+Circular Saw Blade 7-1/4" 4T Demo,Saw Blades & Consumables,EA,9.00,BLD-CS74T,0,true,4-tooth demolition blade for rough cuts with embedded nails.,Pro Hardware Supply
+Recip Saw Blade Demo 6" (5-pack),Saw Blades & Consumables,PK,14.00,BLD-RS6DM5,0,true,Demolition reciprocating blades for nails in wood.,Pro Hardware Supply
+Recip Saw Blade Wood 6" (5-pack),Saw Blades & Consumables,PK,12.00,BLD-RS6WD5,0,true,Reciprocating saw blades for clean wood cuts.,Pro Hardware Supply
+Recip Saw Blade Metal 6" (5-pack),Saw Blades & Consumables,PK,16.00,BLD-RS6MT5,0,true,Bi-metal reciprocating blades for pipe and metal.,Pro Hardware Supply
+Recip Saw Blade Pruning 9" (3-pack),Saw Blades & Consumables,PK,10.00,BLD-RS9PR3,0,true,Coarse blades for tree removal and rough demo.,Pro Hardware Supply
+Jigsaw Blade Wood T-Shank (5-pack),Saw Blades & Consumables,PK,10.00,BLD-JS5WD,0,true,T-shank jigsaw blades for wood cuts.,Pro Hardware Supply
+Jigsaw Blade Metal T-Shank (5-pack),Saw Blades & Consumables,PK,12.00,BLD-JS5MT,0,true,T-shank jigsaw blades for sheet metal and pipe.,Pro Hardware Supply
+Hole Saw 3" Bi-Metal,Saw Blades & Consumables,EA,18.00,BLD-HS3BM,0,true,Bi-metal hole saw for wood and light metal. 3-inch diameter.,Pro Hardware Supply
+Hole Saw 4" Bi-Metal,Saw Blades & Consumables,EA,22.00,BLD-HS4BM,0,true,4-inch hole saw for large plumbing and electrical openings.,Pro Hardware Supply
+Spade Bit 1" (wood boring),Saw Blades & Consumables,EA,8.00,BLD-SB1,0,true,1-inch spade bit for boring through framing for pipe and wire.,Pro Hardware Supply
+Spade Bit 1-1/2" (wood boring),Saw Blades & Consumables,EA,10.00,BLD-SB15,0,true,1-1/2-inch spade bit for larger bore holes.,Pro Hardware Supply
+Auger Bit 1" x 16" (electrician),Saw Blades & Consumables,EA,18.00,BLD-AB1-16,0,true,Long auger bit for boring through multiple studs.,Pro Hardware Supply
+Self-Feed Bit 2-1/8",Saw Blades & Consumables,EA,22.00,BLD-SFB2,0,true,Self-feed bit for large-diameter holes in subfloor and framing.,Pro Hardware Supply
+Diamond Blade 4-1/2" Dry Cut,Saw Blades & Consumables,EA,18.00,BLD-DB45DRY,0,true,Dry-cut diamond blade for tile and concrete block.,Pro Hardware Supply
+Abrasive Cutoff Wheel 4-1/2" (25/box),Saw Blades & Consumables,BX,22.00,BLD-ACW45-25,0,true,Metal cutoff wheels for angle grinder.,Pro Hardware Supply
+Sandpaper 60-grit (10-pack),Saw Blades & Consumables,PK,7.00,BLD-SP60-10,0,true,Coarse sandpaper for rough shaping.,Pro Hardware Supply
+Sandpaper 80-grit (10-pack),Saw Blades & Consumables,PK,7.00,BLD-SP80-10,0,true,Medium-coarse sandpaper for material removal.,Pro Hardware Supply
+Sandpaper 120-grit (10-pack),Saw Blades & Consumables,PK,7.00,BLD-SP120-10,0,true,Medium sandpaper for surface prep before paint.,Pro Hardware Supply
+Sandpaper 220-grit (10-pack),Saw Blades & Consumables,PK,7.00,BLD-SP220-10,0,true,Fine sandpaper for finishing coats.,Pro Hardware Supply
+Vinyl Window Double-Hung 30x48,Windows & Doors,EA,185.00,WD-VDH3048,5,true,Vinyl double-hung window 30"x48". Low-E glass.,Window & Door Depot
+Vinyl Window Double-Hung 36x48,Windows & Doors,EA,210.00,WD-VDH3648,5,true,Vinyl double-hung window 36"x48". Low-E glass.,Window & Door Depot
+Vinyl Window Double-Hung 36x60,Windows & Doors,EA,245.00,WD-VDH3660,5,true,Vinyl double-hung window 36"x60". Low-E glass.,Window & Door Depot
+Vinyl Window Slider 48x36,Windows & Doors,EA,195.00,WD-VSLD4836,5,true,Vinyl sliding window 48"x36".,Window & Door Depot
+Vinyl Window Single Hung 24x36,Windows & Doors,EA,145.00,WD-VSH2436,5,true,Vinyl single-hung window 24"x36".,Window & Door Depot
+Vinyl Window Casement 24x48,Windows & Doors,EA,235.00,WD-VCAS2448,5,true,Vinyl casement window 24"x48" with crank.,Window & Door Depot
+Vinyl Egress Window 32x48,Windows & Doors,EA,285.00,WD-VEGR3248,5,true,Egress-compliant window for basement bedrooms.,Window & Door Depot
+Exterior Door Fiberglass 3068 (Prehung),Windows & Doors,EA,485.00,WD-EDFG3068,0,true,Fiberglass exterior door 36"x80" prehung with frame.,Window & Door Depot
+Exterior Door Steel 3068 (Prehung),Windows & Doors,EA,285.00,WD-EDST3068,0,true,Steel exterior door 36"x80" prehung with frame.,Window & Door Depot
+Interior Door Hollow Core 2468 (Prehung),Windows & Doors,EA,125.00,WD-IDHC2468,0,true,Hollow core interior door 24"x80" prehung.,Window & Door Depot
+Interior Door Hollow Core 2868 (Prehung),Windows & Doors,EA,135.00,WD-IDHC2868,0,true,Hollow core interior door 28"x80" prehung.,Window & Door Depot
+Interior Door Hollow Core 3068 (Prehung),Windows & Doors,EA,145.00,WD-IDHC3068,0,true,Hollow core interior door 30"x80" prehung.,Window & Door Depot
+Interior Door Solid Core 2868 (Prehung),Windows & Doors,EA,245.00,WD-IDSC2868,0,true,Solid core interior door 28"x80" prehung.,Window & Door Depot
+Bifold Door 3068 2-Panel,Windows & Doors,EA,85.00,WD-BF3068-2,0,true,2-panel hollow core bifold door 30"x80".,Window & Door Depot
+Sliding Closet Door 5068 Bypass,Windows & Doors,EA,145.00,WD-SC5068,0,true,2-panel bypass sliding closet door 50"x80".,Window & Door Depot
+Pocket Door Hardware Kit 2868,Windows & Doors,EA,185.00,WD-PKTHW2868,0,true,Pocket door frame and hardware kit for 28"x80" door.,Window & Door Depot
+Garage Door 16x7 Steel Insulated,Windows & Doors,EA,1200.00,WD-GD167-INS,0,true,16'x7' insulated steel garage door. R-12 value.,Window & Door Depot
+Garage Door 9x7 Steel Insulated,Windows & Doors,EA,750.00,WD-GD97-INS,0,true,9'x7' insulated single-car steel garage door.,Window & Door Depot
+Door Lockset Entry Keyed,Windows & Doors,EA,65.00,WD-LKSET-ENT,5,true,Keyed entry lockset with deadbolt combo.,Window & Door Depot
+Door Lockset Passage (Interior),Windows & Doors,EA,35.00,WD-LKSET-PAS,5,true,Passage knob set for interior doors.,Window & Door Depot
+Door Lockset Privacy (Bathroom),Windows & Doors,EA,38.00,WD-LKSET-PRV,5,true,Privacy lockset with push-button lock for bathrooms.,Window & Door Depot
+Door Hinge 3.5" Satin Nickel (3-pack),Windows & Doors,PK,12.00,WD-HNGE35-3,5,true,3.5" square corner door hinges.,Window & Door Depot
+Door Stop Wall Mount,Windows & Doors,EA,4.50,WD-DSTOP-WL,5,true,Wall-mounted rubber door stop.,Window & Door Depot
+Vinyl Siding Double 4" (per SF),Exterior Finishes,SF,1.45,EXT-VSID4-SF,10,true,Double 4" vinyl siding panel. Price per SF.,Regional Lumber Co.
+Fiber Cement Siding HardiePlank (per SF),Exterior Finishes,SF,2.85,EXT-HPLN-SF,10,true,5/4" HardiePlank lap siding. Price per SF.,Regional Lumber Co.
+Fiber Cement Trim Board 5/4"x6"x16',Exterior Finishes,EA,42.00,EXT-HTRM-5416,10,true,HardieTrim fiber cement board for corners and banding.,Regional Lumber Co.
+Vinyl Soffit Vented (per SF),Exterior Finishes,SF,1.25,EXT-VSFT-SF,10,true,Vented vinyl soffit panel. Price per SF.,Regional Lumber Co.
+Aluminum Fascia 12"x10',Exterior Finishes,EA,18.00,EXT-AFAS12-10,10,true,Pre-painted aluminum fascia board.,Regional Lumber Co.
+Vinyl J-Channel 12',Exterior Finishes,EA,4.50,EXT-VJCH12,5,true,Vinyl J-channel for siding edges and window framing.,Regional Lumber Co.
+Vinyl Utility Trim 12',Exterior Finishes,EA,5.50,EXT-VUTR12,5,true,Vinyl utility trim for inside corners and openings.,Regional Lumber Co.
+Gutter 5" K-Style Aluminum 10',Exterior Finishes,EA,8.50,EXT-GUT5K-10,5,true,5-inch K-style aluminum gutter section.,Pro Hardware Supply
+Downspout 3"x4" Aluminum 10',Exterior Finishes,EA,7.50,EXT-DS34-10,5,true,Rectangular aluminum downspout.,Pro Hardware Supply
+Gutter End Cap,Exterior Finishes,EA,3.50,EXT-GUT-ECAP,5,true,End cap for K-style gutter. Left or right.,Pro Hardware Supply
+Gutter Outlet,Exterior Finishes,EA,4.50,EXT-GUT-OUT,5,true,Drop outlet for connecting gutter to downspout.,Pro Hardware Supply
+Gutter Hanger Strap,Exterior Finishes,EA,1.25,EXT-GUT-HNGR,5,true,Screw-type hidden gutter hanger.,Pro Hardware Supply
+Downspout Elbow 3"x4",Exterior Finishes,EA,4.00,EXT-DS-ELB34,5,true,Aluminum downspout elbow.,Pro Hardware Supply
+Exterior Corner Vinyl Siding,Exterior Finishes,EA,3.50,EXT-VCNR,5,true,Vinyl outside corner post for siding.,Regional Lumber Co.
+Starter Strip Vinyl Siding 12',Exterior Finishes,EA,4.00,EXT-VSTR12,5,true,Vinyl siding starter strip.,Regional Lumber Co.
+Vent Cap 4" Exterior,Exterior Finishes,EA,12.00,EXT-VCAP4,5,true,Exterior wall vent cap for dryer or bath exhaust.,Pro Hardware Supply
+Exterior Caulk Paintable (10 oz),Exterior Finishes,TU,5.50,EXT-CAULK10,5,true,Siliconized paintable caulk for exterior seams.,Pro Hardware Supply
+Baseboard 3-1/2" MDF 16',Trim & Millwork,EA,18.00,TRM-BASE35-16,10,true,3.5-inch MDF baseboard. Paint grade.,Interior Supply Group
+Baseboard 5-1/4" MDF 16',Trim & Millwork,EA,26.00,TRM-BASE525-16,10,true,5.25-inch MDF baseboard for a bolder profile.,Interior Supply Group
+Door Casing Colonial 2-1/2" 7',Trim & Millwork,EA,8.50,TRM-DCAS25-7,10,true,Colonial door casing. Paint grade MDF.,Interior Supply Group
+Window Casing 2-1/2" 8',Trim & Millwork,EA,9.50,TRM-WCAS25-8,10,true,Window casing for interior window frames.,Interior Supply Group
+Crown Molding 3-5/8" 16',Trim & Millwork,EA,28.00,TRM-CRWN358-16,12,true,3.625-inch crown molding. Paint grade.,Interior Supply Group
+Chair Rail 2-1/2" 16',Trim & Millwork,EA,18.00,TRM-CHRL25-16,10,true,Chair rail molding for wall protection and detail.,Interior Supply Group
+Quarter Round 3/4" 16',Trim & Millwork,EA,7.50,TRM-QR34-16,10,true,3/4-inch quarter round for floor-to-wall transitions.,Interior Supply Group
+Shoe Molding 9/16"x1-3/4" 16',Trim & Millwork,EA,6.50,TRM-SHOE-16,10,true,Shoe molding to cover floor-to-baseboard gap.,Interior Supply Group
+Window Stool Pine 5/4"x4"x8',Trim & Millwork,EA,18.00,TRM-WSTL-48,10,true,Pine window stool (interior sill) for window finish.,Interior Supply Group
+Window Apron 1"x4"x8',Trim & Millwork,EA,8.00,TRM-WAPR-48,10,true,Window apron below interior sill.,Interior Supply Group
+Rosette Block 3-1/2",Trim & Millwork,EA,4.50,TRM-ROSE35,5,true,Corner block rosette for craftsman casing detail.,Interior Supply Group
+Plinth Block 3-1/2",Trim & Millwork,EA,5.50,TRM-PLNT35,5,true,Plinth block at base of door casing.,Interior Supply Group
+Craftsman Header Casing 5" 8',Trim & Millwork,EA,22.00,TRM-CHDR5-8,10,true,Flat craftsman header for door and window tops.,Interior Supply Group
+Beadboard Paneling (per SF),Trim & Millwork,SF,2.85,TRM-BDBD-SF,10,true,Beadboard wainscot paneling. Price per SF.,Interior Supply Group
+MDF Panel 1/4" 4x8,Trim & Millwork,SH,22.00,TRM-MDF14-48,10,true,1/4-inch MDF panel for wainscot and accent walls.,Interior Supply Group
+Stair Stringer Precut PT 3-Step,Stairs & Rails,EA,38.00,STR-STRG3,5,true,Pressure-treated precut 3-step stair stringer.,Regional Lumber Co.
+Stair Stringer Precut PT 4-Step,Stairs & Rails,EA,52.00,STR-STRG4,5,true,Pressure-treated precut 4-step stair stringer.,Regional Lumber Co.
+Stair Stringer Precut PT 5-Step,Stairs & Rails,EA,65.00,STR-STRG5,5,true,Pressure-treated precut 5-step stair stringer.,Regional Lumber Co.
+Oak Stair Tread 11-1/2"x4',Stairs & Rails,EA,35.00,STR-TREAD-OAK4,8,true,Solid oak stair tread. Unfinished.,Cabinet & Millwork Supply
+Pine Stair Tread 11-1/2"x4',Stairs & Rails,EA,18.00,STR-TREAD-PINE4,8,true,Solid pine stair tread. Paint grade.,Cabinet & Millwork Supply
+Stair Riser 1"x8"x48" Pine,Stairs & Rails,EA,12.00,STR-RISER-48,8,true,Pine stair riser board. Paint grade.,Cabinet & Millwork Supply
+Wood Handrail Pine 8',Stairs & Rails,EA,28.00,STR-HRAIL-8,8,true,Pine handrail profile. Requires brackets.,Cabinet & Millwork Supply
+Handrail Wall Bracket,Stairs & Rails,EA,8.50,STR-HRBKT,5,true,Wall-mount handrail bracket. Sold per each.,Cabinet & Millwork Supply
+Wood Baluster 1-1/4"x36",Stairs & Rails,EA,3.50,STR-BAL-36,8,true,Square wood baluster for stair railing.,Cabinet & Millwork Supply
+Newel Post 3-1/2"x3-1/2"x42",Stairs & Rails,EA,85.00,STR-NEWEL42,5,true,Box newel post for stair bottom and landing.,Cabinet & Millwork Supply
+Stair Nose LVP 7',Stairs & Rails,EA,28.00,STR-NOSE-LVP7,5,true,LVP-compatible stair nose transition 7-ft.,Interior Supply Group
+Stair Angle Bracket (pair),Stairs & Rails,PR,6.50,STR-ABKT-PR,5,true,Decorative L-brackets for stair tread attachment.,Pro Hardware Supply
+Base Cabinet 12" Wide,Cabinets & Countertops,EA,85.00,CAB-B12,0,true,12-inch ready-to-assemble base cabinet.,Cabinet & Millwork Supply
+Base Cabinet 18" Wide,Cabinets & Countertops,EA,110.00,CAB-B18,0,true,18-inch RTA base cabinet.,Cabinet & Millwork Supply
+Base Cabinet 24" Wide,Cabinets & Countertops,EA,135.00,CAB-B24,0,true,24-inch RTA base cabinet.,Cabinet & Millwork Supply
+Base Cabinet 36" Wide,Cabinets & Countertops,EA,185.00,CAB-B36,0,true,36-inch RTA base cabinet.,Cabinet & Millwork Supply
+Base Corner Cabinet 36",Cabinets & Countertops,EA,245.00,CAB-BCNR36,0,true,36-inch blind corner base cabinet.,Cabinet & Millwork Supply
+Wall Cabinet 12"Wx30"H,Cabinets & Countertops,EA,75.00,CAB-W1230,0,true,12-inch wide wall cabinet 30 inches tall.,Cabinet & Millwork Supply
+Wall Cabinet 18"Wx30"H,Cabinets & Countertops,EA,95.00,CAB-W1830,0,true,18-inch wide wall cabinet.,Cabinet & Millwork Supply
+Wall Cabinet 36"Wx30"H,Cabinets & Countertops,EA,145.00,CAB-W3630,0,true,36-inch wide wall cabinet.,Cabinet & Millwork Supply
+Tall Pantry Cabinet 84"H,Cabinets & Countertops,EA,285.00,CAB-T84,0,true,Tall pantry/utility cabinet 84 inches tall.,Cabinet & Millwork Supply
+Laminate Countertop (per LF),Cabinets & Countertops,LF,28.00,CTR-LAM-LF,5,true,Post-form laminate countertop. Per linear foot.,Cabinet & Millwork Supply
+Quartz Countertop (per SF),Cabinets & Countertops,SF,85.00,CTR-QTZ-SF,5,true,Engineered quartz countertop installed. Per SF.,Cabinet & Millwork Supply
+Granite Countertop (per SF),Cabinets & Countertops,SF,75.00,CTR-GRN-SF,5,true,Natural granite countertop installed. Per SF.,Cabinet & Millwork Supply
+Cabinet Drawer Pull,Cabinets & Countertops,EA,3.50,CAB-PULL,5,true,Standard bar pull handle for cabinets.,Cabinet & Millwork Supply
+Cabinet Door Hinge Soft-Close,Cabinets & Countertops,EA,3.00,CAB-HNGE-SC,5,true,Concealed soft-close cabinet hinge.,Cabinet & Millwork Supply
+Undermount Sink Stainless 18"x16",Cabinets & Countertops,EA,145.00,CAB-SINK-18,0,true,Single bowl stainless steel undermount kitchen sink.,Plumbing Pro Distributors
+Foundation Waterproof Membrane (per SF),Waterproofing & Sealing,SF,1.85,WP-FNDWPM-SF,5,true,Rubberized waterproofing membrane for below-grade walls.,Southwest Concrete Supply
+Drainage Board 1" (per SF),Waterproofing & Sealing,SF,0.85,WP-DRNBD-SF,5,true,Dimple drainage board for foundation walls.,Southwest Concrete Supply
+Window Flashing Tape 4" (75-ft roll),Waterproofing & Sealing,RL,28.00,WP-WFTPE4-75,5,true,Self-adhering window and door flashing tape.,Pro Hardware Supply
+Door Pan Flashing 36",Waterproofing & Sealing,EA,18.00,WP-DPFL36,5,true,Flexible door sill pan flashing for exterior door openings.,Pro Hardware Supply
+Self-Adhering Flashing Tape 6" (75-ft roll),Waterproofing & Sealing,RL,38.00,WP-AFTPE6-75,5,true,Wide self-adhering flashing tape for transitions and seams.,Pro Hardware Supply
+Sill Seal Foam 3-1/2"x50',Waterproofing & Sealing,RL,12.00,WP-SILL35-50,5,true,Foam sill seal between sill plate and foundation.,Pro Hardware Supply
+Vapor Barrier 6mil 10'x25',Waterproofing & Sealing,RL,18.00,WP-VB6M-1025,5,true,6-mil poly vapor barrier for crawl space and slab.,Southwest Concrete Supply
+Hydraulic Cement (10 lb),Waterproofing & Sealing,BX,22.00,WP-HCEM10,5,true,Fast-setting hydraulic cement for active leaks in concrete.,Southwest Concrete Supply
+Concrete Crack Filler (10 oz),Waterproofing & Sealing,TU,8.50,WP-CRFIL10,5,true,Polyurethane crack filler for concrete foundations.,Pro Hardware Supply
+Waterproofing Coating (1 gal),Waterproofing & Sealing,GL,28.00,WP-COAT-1G,10,true,Masonry waterproofing paint for block and poured walls.,Southwest Concrete Supply
+Backer Rod 3/8" (100-ft roll),Waterproofing & Sealing,RL,14.00,WP-BKRD38-100,5,true,Foam backer rod for deep joint sealing before caulk.,Pro Hardware Supply
+Expansion Joint Filler 1/2"x4"x6',Waterproofing & Sealing,EA,6.50,WP-EXPJT-46,5,true,Fiber expansion joint for concrete slabs and flatwork.,Southwest Concrete Supply
+Form Stakes Wood 1"x4"x24" (10-pack),Concrete Forming,PK,14.00,CF-FSTK-WD10,5,true,Wood form stakes for concrete flatwork.,Southwest Concrete Supply
+Form Stakes Steel 16" (10-pack),Concrete Forming,PK,28.00,CF-FSTK-ST10,5,true,Steel form stakes for heavy-duty forming.,Southwest Concrete Supply
+Snap Ties Wall Form (50/box),Concrete Forming,BX,28.00,CF-SNPTIE50,5,true,Snap ties for wall form assembly.,Southwest Concrete Supply
+Form Release Agent (1 gal),Concrete Forming,GL,22.00,CF-RELEAS-1G,5,true,Oil-based release agent to prevent concrete bonding to forms.,Southwest Concrete Supply
+Fiber Mesh Reinforcement (1.5 lb bag),Concrete Forming,BAG,8.50,CF-FMSH15,5,true,Polypropylene fiber mesh added to concrete mix for crack resistance.,Southwest Concrete Supply
+Concrete Curing Compound (1 gal),Concrete Forming,GL,22.00,CF-CURECOMP-1G,5,true,Spray-on curing compound to retain moisture in fresh concrete.,Southwest Concrete Supply
+Concrete Sealer Penetrating (1 gal),Concrete Forming,GL,32.00,CF-SEAL-1G,5,true,Penetrating silane sealer for finished flatwork and driveways.,Southwest Concrete Supply
+Duplex Form Nails 16d (1 lb),Concrete Forming,LB,3.75,CF-NDPX16,5,true,Double-head duplex nails for concrete forming. Easy removal.,Southwest Concrete Supply
+Metal Stud 3-5/8" 25ga 8',Metal Framing,EA,4.50,MF-ST358-25-8,10,true,25-gauge metal stud for non-load-bearing interior partitions.,Interior Supply Group
+Metal Stud 3-5/8" 25ga 10',Metal Framing,EA,5.50,MF-ST358-25-10,10,true,10-foot 25-gauge metal stud.,Interior Supply Group
+Metal Stud 6" 20ga 8',Metal Framing,EA,6.50,MF-ST6-20-8,10,true,20-gauge 6-inch metal stud for taller or structural partitions.,Interior Supply Group
+Metal Stud 6" 20ga 10',Metal Framing,EA,8.00,MF-ST6-20-10,10,true,10-foot 20-gauge 6-inch metal stud.,Interior Supply Group
+Metal Track 3-5/8" 25ga 10',Metal Framing,EA,4.00,MF-TK358-25-10,10,true,25-gauge metal track (top and bottom plate) for 3-5/8" studs.,Interior Supply Group
+Metal Track 6" 20ga 10',Metal Framing,EA,5.50,MF-TK6-20-10,10,true,20-gauge 6-inch metal track.,Interior Supply Group
+Metal Furring Channel 1-5/8" 10',Metal Framing,EA,3.50,MF-FC158-10,10,true,Hat-shaped furring channel for resilient mounting.,Interior Supply Group
+Hat Channel 7/8" 10',Metal Framing,EA,4.00,MF-HC78-10,10,true,7/8-inch hat channel for horizontal furring over metal framing.,Interior Supply Group
+Self-Drilling Screw #8x1/2" (1000/box),Metal Framing,BX,18.00,MF-SDSCRW-1000,5,true,Pan-head self-drilling screws for metal stud framing.,Interior Supply Group
+Metal Stud Clip (bag of 25),Metal Framing,BG,12.00,MF-STCLIP25,5,true,Slip-track clips for deflection joints in metal framing.,Interior Supply Group
+PT Deck Board 5/4"x6"x16',Deck & Outdoor,EA,24.00,DK-PTBD56-16,12,true,Pressure-treated 5/4"x6" deck board.,Regional Lumber Co.
+PT Deck Board 2"x6"x16',Deck & Outdoor,EA,18.00,DK-PTBD26-16,12,true,Pressure-treated 2x6 for deck framing and planking.,Regional Lumber Co.
+Composite Deck Board 1"x6"x16' (Trex),Deck & Outdoor,EA,42.00,DK-TCOMP16,10,true,Trex composite decking 1x6x16. Low maintenance.,Regional Lumber Co.
+Composite Decking Hidden Fastener (75/bag),Deck & Outdoor,BG,22.00,DK-CFST75,5,true,Hidden fastener clips for composite decking installation.,Regional Lumber Co.
+Decking Screws 305SS 2-1/2" (1 lb),Deck & Outdoor,LB,12.00,DK-SCRW305-25,5,true,305 stainless steel deck screws for outdoor use.,Pro Hardware Supply
+Post Base Adjustable ABA44,Deck & Outdoor,EA,12.00,DK-ABA44,5,true,Simpson ABA44 adjustable post base for 4x4 deck posts.,Pro Hardware Supply
+Post Base Adjustable ABA66,Deck & Outdoor,EA,18.00,DK-ABA66,5,true,Simpson ABA66 adjustable post base for 6x6 deck posts.,Pro Hardware Supply
+Composite Railing Post 4"x4"x42",Deck & Outdoor,EA,45.00,DK-RLPOST42,5,true,Composite deck railing post 42-inch height.,Regional Lumber Co.
+Composite Top Rail 8',Deck & Outdoor,EA,38.00,DK-TOPRAIL8,5,true,Composite top rail section for deck railing.,Regional Lumber Co.
+Composite Baluster 36" (4-pack),Deck & Outdoor,PK,28.00,DK-BAL36-4,5,true,Composite square balusters 36-inch height.,Regional Lumber Co.
+Newel Post Cap,Deck & Outdoor,EA,12.00,DK-NWLCAP,5,true,Post cap for composite newel post.,Regional Lumber Co.
+Deck Board End Sealer (1 qt),Deck & Outdoor,QT,12.00,DK-ENDSEAL-QT,5,true,End-grain sealer to prevent PT deck board checking.,Pro Hardware Supply
+Deck Stain & Sealer (1 gal),Deck & Outdoor,GL,38.00,DK-STAIN-1G,10,true,Semi-transparent deck stain and sealer combo.,Pro Hardware Supply
+Joist Tape Flashing 4" (75-ft roll),Deck & Outdoor,RL,32.00,DK-JTFLASH75,5,true,Self-adhering flashing tape for deck joists to prevent rot.,Pro Hardware Supply
+Interior Latex Paint (1 gal),Paint & Finish,GL,42.00,PNT-INT1G,10,true,Premium interior latex paint.,Interior Supply Group
+Interior Latex Paint (5 gal),Paint & Finish,BKT,165.00,PNT-INT5G,10,true,Premium interior latex paint 5-gallon pail.,Interior Supply Group
+Exterior Latex Paint (1 gal),Paint & Finish,GL,52.00,PNT-EXT1G,10,true,100% acrylic exterior paint.,Interior Supply Group
+Exterior Latex Paint (5 gal),Paint & Finish,BKT,195.00,PNT-EXT5G,10,true,100% acrylic exterior paint 5-gallon pail.,Interior Supply Group
+Interior Primer (1 gal),Paint & Finish,GL,28.00,PNT-PRM1G,10,true,PVA drywall primer for new drywall.,Interior Supply Group
+Exterior Primer (1 gal),Paint & Finish,GL,32.00,PNT-EPRM1G,10,true,Oil-based exterior primer.,Interior Supply Group
+Silicone Caulk (10.1 oz),Paint & Finish,TU,6.50,PNT-SIL10,5,true,100% silicone sealant for wet areas.,Interior Supply Group
+Paintable Latex Caulk (10.1 oz),Paint & Finish,TU,4.50,PNT-LAT10,5,true,Alex Plus paintable latex caulk.,Interior Supply Group
+Painter's Tape 2" (60 yd),Paint & Finish,RL,8.50,PNT-TAPE2,5,true,Professional blue painter's tape.,Interior Supply Group
+Flexible Duct 6" 25-ft,HVAC,EA,48.00,HVAC-FD6-25,10,true,R-6 insulated flexible ductwork.,Pro Hardware Supply
+Flexible Duct 8" 25-ft,HVAC,EA,65.00,HVAC-FD8-25,10,true,R-6 insulated flexible ductwork.,Pro Hardware Supply
+Metal Duct 6" Round 5-ft,HVAC,EA,18.00,HVAC-MD6-5,5,true,26-gauge galvanized round duct.,Pro Hardware Supply
+Metal Duct 8" Round 5-ft,HVAC,EA,24.00,HVAC-MD8-5,5,true,26-gauge galvanized round duct.,Pro Hardware Supply
+Supply Register 4x10,HVAC,EA,8.50,HVAC-REG410,5,true,White steel supply register with damper.,Pro Hardware Supply
+Return Air Grille 14x14,HVAC,EA,18.00,HVAC-RTN14,5,true,White steel return air grille.,Pro Hardware Supply
+Digital Thermostat,HVAC,EA,65.00,HVAC-TSTAT,0,true,Programmable digital thermostat.,Pro Hardware Supply
+HVAC Duct Tape 1.89"x60-yd,HVAC,RL,12.00,HVAC-DTPE,5,true,Aluminum foil HVAC duct tape.,Pro Hardware Supply
