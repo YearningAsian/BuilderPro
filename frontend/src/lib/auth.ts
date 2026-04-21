@@ -9,7 +9,7 @@ export type BuilderProSession = {
   lastActiveAt?: string;
 };
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "/backend-api";
 const AUTH_COOKIE_MAX_AGE = "Max-Age=0";
 const SESSION_ABSOLUTE_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
 const SESSION_IDLE_TIMEOUT_MS = 12 * 60 * 60 * 1000;

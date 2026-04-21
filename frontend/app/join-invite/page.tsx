@@ -118,7 +118,7 @@ function JoinInvitePageContent() {
     setIsSubmitting(true);
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
+      const baseUrl = process.env.NEXT_PUBLIC_API_URL || "/backend-api";
       const response = await fetch(`${baseUrl}/auth/join-invite`, {
         method: "POST",
         headers: {

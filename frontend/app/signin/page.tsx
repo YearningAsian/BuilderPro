@@ -39,7 +39,7 @@ function validateForm(email: string, password: string): FormErrors {
 }
 
 async function signInRequest(email: string, password: string): Promise<AuthResponse> {
-  const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
+  const baseUrl = process.env.NEXT_PUBLIC_API_URL || "/backend-api";
   const response = await fetch(`${baseUrl}/auth/signin`, {
     method: "POST",
     headers: {
